@@ -18,6 +18,7 @@ class NanitPlatform {
     discoveryInterval;
     sensorInterval;
     rtmpPortCounter = 0;
+    _refreshPromise = null;
     authFailures = 0;
     authDisabled = false;
     constructor(log, config, api) {
@@ -93,6 +94,13 @@ class NanitPlatform {
         }
     }
     async refreshAccessToken(token) {
+        if (this._refreshPromise) return this._refreshPromise;
+        this._refreshPromise = this._doRefreshAccessToken(token).finally(() => {
+            this._refreshPromise = null;
+        });
+        return this._refreshPromise;
+    }
+    async _doRefreshAccessToken(token) {
         const refreshToken = token || this.refreshToken;
         if (!refreshToken) {
             throw new Error('No refresh token available');
@@ -270,7 +278,10 @@ class NanitPlatform {
         return this.accessToken;
     }
     allocateRtmpPort() {
-        return (this.config.localRtmpPort || 1935) + this.rtmpPortCounter++;
+        const base = this.config.localRtmpPort || 1935;
+        const port = base + (this.rtmpPortCounter % 100);
+        this.rtmpPortCounter++;
+        return port;
     }
     shutdown() {
         this.log.info('Shutting down Nanit platform');

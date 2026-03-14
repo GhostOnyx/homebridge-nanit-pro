@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.3] - 2026-03-14
+
+### Fixed
+- `refreshAccessToken()` is now mutex-guarded — concurrent calls (e.g. auto-refresh firing during startup) share a single in-flight promise instead of issuing parallel token requests
+- `allocateRtmpPort()` wraps at 100 ports above base (`localRtmpPort`) to prevent counter exceeding valid port range on long-running instances
+
+---
+
 ## [1.1.2] - 2026-03-14
 
 ### Fixed
