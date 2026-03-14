@@ -3,7 +3,6 @@
   "version": "1.1.0",
   "description": "Homebridge plugin for Nanit baby camera — local streaming, temperature/humidity sensors, HomeKit Secure Video, go2rtc relay",
   "main": "src/index.js",
-  "customUiPath": "homebridge-ui",
   "bin": {
     "nanit-auth": "src/cli.js"
   },
@@ -32,7 +31,6 @@
     "homebridge": ">=1.6.0"
   },
   "dependencies": {
-    "@homebridge/plugin-ui-utils": "^2.0.0",
     "node-media-server": "^2.7.4",
     "protobufjs": "^7.5.4",
     "ws": "^8.19.0"

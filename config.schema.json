@@ -2,7 +2,7 @@
   "pluginAlias": "NanitCamera",
   "pluginType": "platform",
   "singular": true,
-  "headerDisplay": "Stream your Nanit baby camera in HomeKit. Use the **Sign In** tab to authenticate and get your refresh token automatically.",
+  "headerDisplay": "Stream your Nanit baby camera in HomeKit. To get your refresh token, visit **http://your-homebridge-ip:8586/auth** after the plugin starts.",
   "footerDisplay": "For help, see the [README](https://github.com/GhostOnyx/homebridge-nanit-pro#readme).",
   "schema": {
     "type": "object",
@@ -71,6 +71,14 @@
         "minimum": 60,
         "description": "How often to refresh the camera list from Nanit servers"
       },
+      "authPort": {
+        "title": "Auth Page Port",
+        "type": "integer",
+        "default": 8586,
+        "minimum": 1024,
+        "maximum": 65535,
+        "description": "Port for the built-in auth page used to generate a refresh token. Visit http://your-ip:PORT/auth"
+      },
       "debug": {
         "title": "Debug Logging",
         "type": "boolean",
@@ -85,6 +93,6 @@
     { "type": "section", "title": "Streaming", "expandable": true, "expanded": true,
       "items": ["streamMode", "localAddress", "localRtmpPort", "go2rtcApiUrl", "ffmpegPath"] },
     { "type": "section", "title": "Advanced", "expandable": true, "expanded": false,
-      "items": ["refreshInterval", "debug"] }
+      "items": ["refreshInterval", "authPort", "debug"] }
   ]
 }

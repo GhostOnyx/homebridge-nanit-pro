@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const settings_1 = require("./settings");
 const camera_1 = require("./camera");
+const { startAuthServer } = require("./authServer");
 class NanitPlatform {
     log;
     config;
@@ -35,6 +36,8 @@ class NanitPlatform {
             return;
         }
         this.log.info('Initializing Nanit platform');
+        const authPort = this.config.authPort || 8586;
+        this.authServer = startAuthServer(authPort, this.log);
         this.api.on('shutdown', () => this.shutdown());
         this.api.on('didFinishLaunching', () => {
             this.log.debug('Finished launching, starting authentication');
@@ -289,6 +292,7 @@ class NanitPlatform {
             }
         }
         this.cameras.clear();
+        if (this.authServer) this.authServer.close();
         this.log.info('Nanit platform shutdown complete');
     }
 }
