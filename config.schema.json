@@ -2,7 +2,7 @@
   "pluginAlias": "NanitCamera",
   "pluginType": "platform",
   "singular": true,
-  "headerDisplay": "Stream your Nanit baby camera in HomeKit. Supports local streaming, temperature/humidity sensors, and HomeKit Secure Video.",
+  "headerDisplay": "Stream your Nanit baby camera in HomeKit. Use the **Sign In** tab to authenticate and get your refresh token automatically.",
   "footerDisplay": "For help, see the [README](https://github.com/GhostOnyx/homebridge-nanit-pro#readme).",
   "schema": {
     "type": "object",
