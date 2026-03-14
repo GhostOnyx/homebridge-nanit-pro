@@ -1,32 +1,30 @@
 'use strict';
 
 const { spawn } = require('child_process');
-const {
-  EventTriggerOption,
-  MediaContainerType,
-  AudioRecordingCodecType,
-  AudioRecordingSamplerate,
-} = require('../../homebridge/node_modules/hap-nodejs/dist/lib/camera/RecordingManagement');
-const {
-  VideoCodecType,
-  H264Profile,
-  H264Level,
-} = require('../../homebridge/node_modules/hap-nodejs/dist/lib/camera/RTPStreamManagement');
+
+// HAP numeric constants (stable protocol values — no import needed)
+// EventTriggerOption.MOTION = 1
+// MediaContainerType.FRAGMENTED_MP4 = 0
+// AudioRecordingCodecType.AAC_LC = 0
+// AudioRecordingSamplerate.KHZ_16 = 3
+// VideoCodecType.H264 = 0
+// H264Profile: BASELINE=0, MAIN=1, HIGH=2
+// H264Level: LEVEL3_1=0, LEVEL3_2=1, LEVEL4_0=2
 
 const RECORDING_OPTIONS = {
-  overrideEventTriggerOptions: [EventTriggerOption.MOTION],
+  overrideEventTriggerOptions: [1], // EventTriggerOption.MOTION
   prebufferLength: 4000,
   mediaContainerConfiguration: [
     {
-      type: MediaContainerType.FRAGMENTED_MP4,
+      type: 0, // MediaContainerType.FRAGMENTED_MP4
       fragmentLength: 4000,
     },
   ],
   video: {
-    type: VideoCodecType.H264,
+    type: 0, // VideoCodecType.H264
     parameters: {
-      profiles: [H264Profile.BASELINE, H264Profile.MAIN, H264Profile.HIGH],
-      levels: [H264Level.LEVEL3_1, H264Level.LEVEL3_2, H264Level.LEVEL4_0],
+      profiles: [0, 1, 2], // BASELINE, MAIN, HIGH
+      levels: [0, 1, 2],   // LEVEL3_1, LEVEL3_2, LEVEL4_0
     },
     resolutions: [
       [1920, 1080, 30],
@@ -37,8 +35,8 @@ const RECORDING_OPTIONS = {
   audio: {
     codecs: [
       {
-        type: AudioRecordingCodecType.AAC_LC,
-        samplerate: AudioRecordingSamplerate.KHZ_16,
+        type: 0,        // AudioRecordingCodecType.AAC_LC
+        samplerate: 3,  // AudioRecordingSamplerate.KHZ_16
         bitrateMode: 0,
         audioChannels: 1,
       },

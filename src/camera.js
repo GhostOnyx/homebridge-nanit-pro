@@ -14,6 +14,7 @@ class NanitCamera {
     cameraController;
     temperatureService;
     humidityService;
+    motionService;
     streamingDelegate;
     recordingDelegate;
     currentRtmpUrl;
@@ -45,11 +46,12 @@ class NanitCamera {
         const go2rtcApiUrl = this.platform.config.go2rtcApiUrl || 'http://localhost:1984';
         if (streamMode === 'local' && localIp && hasValidCameraUid) {
             this.log.info(`[${this.getName()}] Using local streaming mode (${localIp})`);
-            this.streamingDelegate = new localStreamingDelegate_1.LocalStreamingDelegate(this.hap, this.log, this.baby.uid, localIp, () => this.platform.getAccessToken(), rtmpPort, cameraUid, this.baby.uid, this.platform.config.localAddress, (t, h) => this.updateSensors(t, h), ffmpegPath, go2rtcApiUrl);
+            this.streamingDelegate = new localStreamingDelegate_1.LocalStreamingDelegate(this.hap, this.log, this.baby.uid, localIp, () => this.platform.getAccessToken(), rtmpPort, cameraUid, this.baby.uid, this.platform.config.localAddress, (t, h) => this.updateSensors(t, h), ffmpegPath, go2rtcApiUrl, (detected) => this.updateMotion(detected));
         }
         else if (streamMode === 'auto' && localIp && hasValidCameraUid) {
             this.log.info(`[${this.getName()}] Using auto streaming mode (will try local first)`);
-            this.streamingDelegate = new localStreamingDelegate_1.LocalStreamingDelegate(this.hap, this.log, this.baby.uid, localIp, () => this.platform.getAccessToken(), rtmpPort, cameraUid, this.baby.uid, this.platform.config.localAddress, (t, h) => this.updateSensors(t, h), ffmpegPath, go2rtcApiUrl);
+            this.streamingDelegate = new localStreamingDelegate_1.LocalStreamingDelegate(this.hap, this.log, this.baby.uid, localIp, () => this.platform.getAccessToken(), rtmpPort, cameraUid, this.baby.uid, this.platform.config.localAddress, (t, h) => this.updateSensors(t, h), ffmpegPath, go2rtcApiUrl, (detected) => this.updateMotion(detected));
+            this.streamingDelegate.cloudFallbackGetUrl = () => this.getStreamUrl();
         }
         else {
             if (streamMode !== 'cloud') {
@@ -100,7 +102,7 @@ class NanitCamera {
                 delegate: this.recordingDelegate,
             },
             sensors: {
-                motion: this.accessory.getService(this.hap.Service.MotionSensor) || undefined,
+                motion: this.motionService,
             },
         };
         this.cameraController = new this.hap.CameraController(options);
@@ -131,6 +133,14 @@ class NanitCamera {
         this.humidityService
             .getCharacteristic(this.hap.Characteristic.CurrentRelativeHumidity)
             .onGet(() => this.currentHumidity);
+        this.motionService =
+            this.accessory.getService(this.hap.Service.MotionSensor) ||
+                this.accessory.addService(this.hap.Service.MotionSensor, `${this.getName()} Motion`);
+    }
+    updateMotion(detected) {
+        if (this.motionService) {
+            this.motionService.getCharacteristic(this.hap.Characteristic.MotionDetected).updateValue(detected);
+        }
     }
     updateSensors(temperature, humidity) {
         if (temperature !== undefined) {

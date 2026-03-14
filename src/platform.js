@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.NanitPlatform = void 0;
+const fs = require('fs');
+const path = require('path');
 const settings_1 = require("./settings");
 const camera_1 = require("./camera");
 class NanitPlatform {
@@ -13,6 +15,7 @@ class NanitPlatform {
     refreshToken;
     refreshInterval;
     discoveryInterval;
+    sensorInterval;
     rtmpPortCounter = 0;
     authFailures = 0;
     authDisabled = false;
@@ -55,8 +58,7 @@ class NanitPlatform {
         }
         try {
             const configRefreshToken = this.config.refreshToken;
-            const storage = this.api.hap.HAPStorage.storage();
-            const storedToken = configRefreshToken || storage.getItemSync(`nanit_refresh_${this.config.email}`);
+            const storedToken = configRefreshToken || this._loadToken(`nanit_refresh_${this.config.email}`);
             if (storedToken && typeof storedToken === 'string') {
                 this.log.debug('Found stored refresh token, attempting refresh');
                 try {
@@ -112,8 +114,7 @@ class NanitPlatform {
         this.accessToken = data.access_token;
         this.refreshToken = data.refresh_token;
         if (this.refreshToken) {
-            const storage = this.api.hap.HAPStorage.storage();
-            storage.setItemSync(`nanit_refresh_${this.config.email}`, this.refreshToken);
+            this._saveToken(`nanit_refresh_${this.config.email}`, this.refreshToken);
         }
         this.log.debug('Access token refreshed');
     }
@@ -214,6 +215,50 @@ class NanitPlatform {
             this.log.debug('Auto-discovering cameras');
             this.discoverCameras();
         }, discoveryInterval);
+        const sensorPollInterval = (this.config.sensorInterval || 60) * 1000;
+        this.sensorInterval = setInterval(() => {
+            this.pollSensors();
+        }, sensorPollInterval);
+    }
+    async pollSensors() {
+        try {
+            if (!this.accessToken) return;
+            const abortController = new AbortController();
+            const timeoutId = setTimeout(() => abortController.abort(), 10000);
+            const response = await fetch('https://api.nanit.com/babies', {
+                headers: { 'Authorization': this.accessToken, 'nanit-api-version': '1' },
+                signal: abortController.signal,
+            }).finally(() => clearTimeout(timeoutId));
+            if (!response.ok) return;
+            const data = await response.json();
+            for (const baby of data.babies) {
+                const camera = this.cameras.get(baby.uid);
+                if (camera && baby.camera) {
+                    camera.updateSensors(baby.camera.temperature, baby.camera.humidity);
+                }
+            }
+        } catch (err) {
+            this.log.debug('Sensor poll failed:', err.message);
+        }
+    }
+    _getTokensPath() {
+        return path.join(this.api.user.storagePath(), 'nanit-tokens.json');
+    }
+    _loadToken(key) {
+        try {
+            const data = JSON.parse(fs.readFileSync(this._getTokensPath(), 'utf8'));
+            return data[key] || null;
+        } catch { return null; }
+    }
+    _saveToken(key, value) {
+        try {
+            let data = {};
+            try { data = JSON.parse(fs.readFileSync(this._getTokensPath(), 'utf8')); } catch {}
+            data[key] = value;
+            fs.writeFileSync(this._getTokensPath(), JSON.stringify(data, null, 2));
+        } catch (err) {
+            this.log.warn('Failed to save token:', err.message);
+        }
     }
     getAccessToken() {
         if (!this.accessToken) {
@@ -233,6 +278,10 @@ class NanitPlatform {
         if (this.discoveryInterval) {
             clearInterval(this.discoveryInterval);
             this.discoveryInterval = undefined;
+        }
+        if (this.sensorInterval) {
+            clearInterval(this.sensorInterval);
+            this.sensorInterval = undefined;
         }
         for (const camera of this.cameras.values()) {
             if (camera.destroy) {

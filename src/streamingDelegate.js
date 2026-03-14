@@ -105,6 +105,9 @@ class NanitStreamingDelegate {
             const videoPort = info.videoPort;
             const videoSrtpKey = info.videoSRTP.toString('base64');
             const videoSsrc = info.videoSSRC;
+            const audioPort = info.audioPort;
+            const audioSrtpKey = info.audioSRTP.toString('base64');
+            const audioSsrc = info.audioSSRC;
             const ffmpegArgs = [
                 '-re',
                 '-i', streamUrl,
@@ -117,13 +120,26 @@ class NanitStreamingDelegate {
                 '-bufsize', `${video.max_bit_rate * 2}k`,
                 '-maxrate', `${video.max_bit_rate}k`,
                 '-pix_fmt', 'yuv420p',
-                '-an',
                 '-payload_type', video.pt.toString(),
                 '-ssrc', videoSsrc.toString(),
                 '-f', 'rtp',
                 '-srtp_out_suite', 'AES_CM_128_HMAC_SHA1_80',
                 '-srtp_out_params', videoSrtpKey,
                 `srtp://${target}:${videoPort}?rtcpport=${videoPort}&pkt_size=1316`,
+                '-map', '0:a?',
+                '-acodec', 'libopus',
+                '-af', 'aresample=16000',
+                '-ar', '16000',
+                '-ac', '1',
+                '-b:a', '32k',
+                '-frame_duration', '20',
+                '-application', 'voip',
+                '-payload_type', '110',
+                '-ssrc', audioSsrc.toString(),
+                '-f', 'rtp',
+                '-srtp_out_suite', 'AES_CM_128_HMAC_SHA1_80',
+                '-srtp_out_params', audioSrtpKey,
+                `srtp://${target}:${audioPort}?rtcpport=${audioPort}&pkt_size=188`,
             ];
             this.log.debug(`[${this.name}] FFmpeg command starting (URL redacted for security)`);
             const ffmpeg = (0, child_process_1.spawn)('ffmpeg', ffmpegArgs, { env: process.env });

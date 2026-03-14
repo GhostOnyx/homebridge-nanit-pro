@@ -60,10 +60,12 @@ class LocalStreamingDelegate {
     ffmpegPath;
     go2rtcApiUrl;
     onSensorData;
+    onMotion;
+    cloudFallbackGetUrl;
     sensorPollTimer;
     currentRtmpUrl;
     sharedWs = null;
-    constructor(hap, log, name, localIp, getAccessToken, rtmpPort = 1935, cameraUid, babyUid, configuredLocalAddress, onSensorData, ffmpegPath = 'ffmpeg', go2rtcApiUrl = 'http://localhost:1984') {
+    constructor(hap, log, name, localIp, getAccessToken, rtmpPort = 1935, cameraUid, babyUid, configuredLocalAddress, onSensorData, ffmpegPath = 'ffmpeg', go2rtcApiUrl = 'http://localhost:1984', onMotion = null) {
         this.hap = hap;
         this.log = log;
         this.name = name;
@@ -74,6 +76,8 @@ class LocalStreamingDelegate {
         this.babyUid = babyUid || '';
         this.configuredLocalAddress = configuredLocalAddress;
         this.onSensorData = onSensorData;
+        this.onMotion = onMotion;
+        this.cloudFallbackGetUrl = null;
         this.ffmpegPath = ffmpegPath;
         this.go2rtcApiUrl = go2rtcApiUrl || 'http://localhost:1984';
     }
@@ -130,17 +134,26 @@ class LocalStreamingDelegate {
                             statusCode: response.statusCode,
                             statusMessage: response.statusMessage,
                         });
-                        if (response.sensorData && response.sensorData.length > 0 && this.onSensorData) {
-                            let temperature;
-                            let humidity;
-                            for (const sd of response.sensorData) {
-                                const val = sd.valueMilli !== undefined ? sd.valueMilli / 1000 : sd.value;
-                                if (sd.sensorType === nanit_proto_1.client.SensorType.TEMPERATURE) temperature = val;
-                                if (sd.sensorType === nanit_proto_1.client.SensorType.HUMIDITY) humidity = val;
+                        if (response.sensorData && response.sensorData.length > 0) {
+                            if (this.onSensorData) {
+                                let temperature;
+                                let humidity;
+                                for (const sd of response.sensorData) {
+                                    const val = sd.valueMilli !== undefined ? sd.valueMilli / 1000 : sd.value;
+                                    if (sd.sensorType === nanit_proto_1.client.SensorType.TEMPERATURE) temperature = val;
+                                    if (sd.sensorType === nanit_proto_1.client.SensorType.HUMIDITY) humidity = val;
+                                }
+                                if (temperature !== undefined || humidity !== undefined) {
+                                    this.log.debug(`[${this.name}] Sensor data — temp: ${temperature}, humidity: ${humidity}`);
+                                    this.onSensorData(temperature, humidity);
+                                }
                             }
-                            if (temperature !== undefined || humidity !== undefined) {
-                                this.log.debug(`[${this.name}] Sensor data — temp: ${temperature}, humidity: ${humidity}`);
-                                this.onSensorData(temperature, humidity);
+                            for (const sd of response.sensorData) {
+                                if (sd.sensorType === nanit_proto_1.client.SensorType.MOTION && sd.isAlert && this.onMotion) {
+                                    this.onMotion(true);
+                                    // Auto-clear after 10s
+                                    setTimeout(() => { if (this.onMotion) this.onMotion(false); }, 10000);
+                                }
                             }
                         }
                     }
@@ -360,7 +373,19 @@ class LocalStreamingDelegate {
             this.log.info(`[${this.name}] Starting stream for session ${sessionId}`);
             this.startingSessions.add(sessionId);
             try {
-                await this._ensureSharedStream();
+                let usingCloudFallback = false;
+                let fallbackInputUrl = null;
+                try {
+                    await this._ensureSharedStream();
+                } catch (localErr) {
+                    if (this.cloudFallbackGetUrl) {
+                        this.log.warn(`[${this.name}] local stream failed, falling back to cloud`);
+                        fallbackInputUrl = this.cloudFallbackGetUrl();
+                        usingCloudFallback = true;
+                    } else {
+                        throw localErr;
+                    }
+                }
                 if (!this.startingSessions.has(sessionId)) {
                     this.log.info(`[${this.name}] Stream was stopped during setup, aborting`);
                     callback();
@@ -374,7 +399,7 @@ class LocalStreamingDelegate {
                     return;
                 }
                 const streamKey = `nanit_${this.babyUid}`;
-                const rtspUrl = `rtsp://localhost:8554/${streamKey}`;
+                const rtspUrl = usingCloudFallback ? fallbackInputUrl : `rtsp://localhost:8554/${streamKey}`;
                 const video = request.video;
                 const info = session.info;
                 if (!info) {
@@ -397,9 +422,11 @@ class LocalStreamingDelegate {
                 const x264Profile = profileMap[video.profile] || 'main';
                 const x264Level = levelMap[video.level] || '3.1';
                 this.log.info(`[${this.name}] SRTP target: ${target}:${videoPort} (audio: ${info.audioPort}), profile: ${x264Profile}/${x264Level}, ${video.width}x${video.height}@${video.fps}fps ${videoBitrate}kbps`);
+                const inputArgs = usingCloudFallback
+                    ? ['-re', '-i', rtspUrl]
+                    : ['-rtsp_transport', 'tcp', '-i', rtspUrl];
                 const ffmpegArgs = [
-                    '-rtsp_transport', 'tcp',
-                    '-i', rtspUrl,
+                    ...inputArgs,
                     // Video stream
                     '-map', '0:v',
                     '-vcodec', 'libx264',

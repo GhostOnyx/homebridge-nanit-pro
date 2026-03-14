@@ -151,10 +151,9 @@ function printResult(refreshToken) {
     console.log('    {');
     console.log('        "platform": "NanitCamera",');
     console.log('        "email": "your@email.com",');
-    console.log('        "password": "your-password",');
     console.log(`        "refreshToken": "${refreshToken}"`);
     console.log('    }\n');
-    console.log('The plugin will automatically refresh the token on each restart.');
+    console.log('The plugin uses this token to authenticate — it will refresh automatically.');
 }
 main().catch((error) => {
     console.error('Error:', error.message);
