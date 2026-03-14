@@ -45,6 +45,7 @@ function ask(question, hidden = false) {
         if (hidden) {
             process.stdout.write(question);
             const stdin = process.stdin;
+            rl.pause();
             stdin.setRawMode(true);
             stdin.resume();
             stdin.setEncoding('utf8');
@@ -56,6 +57,7 @@ function ask(question, hidden = false) {
                     stdin.pause();
                     stdin.removeListener('data', onData);
                     process.stdout.write('\n');
+                    rl.resume();
                     resolve(password);
                 }
                 else if (char === '\u0003') {
