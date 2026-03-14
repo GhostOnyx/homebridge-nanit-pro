@@ -4,9 +4,11 @@ A [Homebridge](https://homebridge.io) plugin that brings your **Nanit baby camer
 
 ## Features
 
-- **Live video streaming** — local (LAN) or cloud mode
+- **Live video streaming** — local (LAN), cloud, or auto mode (local with cloud fallback)
+- **Audio** — full audio support in both local and cloud streaming modes
 - **Low latency** — uses [go2rtc](https://github.com/AlexxIT/go2rtc) as a relay for minimal lag
-- **Temperature & humidity sensors** — shown as separate accessories in the Home app
+- **Temperature & humidity sensors** — polled every 60 seconds, shown as separate accessories in the Home app
+- **Motion detection** — triggers a HomeKit MotionSensor when the camera detects motion
 - **HomeKit Secure Video (HKSV)** — activity zones, event recording (requires iCloud+ and a Home Hub)
 - **Multi-viewer** — multiple devices can watch simultaneously
 - **Homebridge v1 and v2** compatible
@@ -77,14 +79,15 @@ Follow the prompts — it will output a `refreshToken` to paste into your config
 | Option | Default | Description |
 |--------|---------|-------------|
 | `email` | — | Your Nanit account email **(required)** |
-| `password` | — | Your Nanit password (use `refreshToken` instead) |
-| `refreshToken` | — | Long-lived token from `npx nanit-auth` (recommended) |
-| `streamMode` | `local` | `local` = LAN direct, `cloud` = via Nanit servers, `auto` = local with cloud fallback |
+| `refreshToken` | — | Long-lived token from `npx nanit-auth` **(recommended)** |
+| `password` | — | Your Nanit password (only used once to obtain a refresh token via CLI) |
+| `streamMode` | `local` | `local` = LAN direct, `cloud` = via Nanit servers, `auto` = local with automatic cloud fallback |
 | `localAddress` | auto-detected | Override the Homebridge host IP (only needed if auto-detection picks the wrong interface) |
 | `localRtmpPort` | `1935` | Port the plugin's RTMP server listens on |
 | `go2rtcApiUrl` | `http://localhost:1984` | go2rtc REST API URL |
 | `ffmpegPath` | `ffmpeg` | Path to the ffmpeg binary |
 | `refreshInterval` | `300` | How often to refresh the camera list (seconds) |
+| `sensorInterval` | `60` | How often to poll temperature & humidity (seconds) |
 
 ## HomeKit Secure Video
 
@@ -109,10 +112,18 @@ go2rtc relay
 ffmpeg → SRTP → HomeKit
 ```
 
+In `auto` mode, if the local stream cannot be established the plugin automatically falls back to cloud streaming — no manual intervention needed.
+
 Using go2rtc as a relay means:
 - Stable audio (go2rtc normalises RTMP timestamps before RTSP delivery)
 - Multiple HomeKit viewers share one camera connection
 - go2rtc handles reconnection if the camera drops
+
+## Motion Detection
+
+When the camera detects motion, the plugin triggers a **MotionSensor** accessory in HomeKit. The sensor automatically clears after 10 seconds.
+
+To use motion as a HomeKit automation trigger, set up a Home automation on the MotionSensor accessory.
 
 ## Troubleshooting
 
@@ -125,36 +136,40 @@ Using go2rtc as a relay means:
 - Ensure go2rtc is running (`systemctl status go2rtc`)
 - Verify go2rtc API is reachable: `curl http://localhost:1984/api/streams`
 
+**Streaming falls back to cloud unexpectedly**
+- Check the camera's local IP is reachable from the Pi: `ping <camera-ip>`
+- Ensure port 1935 is not blocked by a firewall between the camera and Homebridge
+
 **Token expired**
 - Run `npx nanit-auth` to get a fresh refresh token and update your config
 
 ## Security
 
-The following security measures are built into this plugin:
-
 | Area | Detail |
 |------|--------|
 | **go2rtc API & RTSP** | Bound to `127.0.0.1` — not reachable from other devices on the network |
 | **Access token never logged** | The Nanit access token is redacted in all log output |
-| **No shell injection** | ffmpeg is launched via `child_process.spawn()` with an arguments array, never a shell string — user-controlled values cannot inject shell commands |
-| **Refresh token preferred over password** | Using a refresh token means your Nanit password is never stored on disk. Password login is intentionally rate-limited to prevent MFA spam |
+| **No shell injection** | ffmpeg is launched via `child_process.spawn()` with an arguments array, never a shell string |
+| **Refresh token preferred over password** | Using a refresh token means your Nanit password is never stored on disk. Password login is intentionally disabled in the plugin to prevent MFA spam |
 | **SRTP encrypted video** | All HomeKit video streams are encrypted end-to-end using SRTP (AES-CM-128-HMAC-SHA1-80) |
 | **WSS signalling** | The WebSocket connection to Nanit's signalling server uses TLS (`wss://`) |
-| **RTMP port 1935** | Must be accessible from the camera on your LAN (required for local streaming). It is not exposed to the internet — ensure your router does not forward this port |
-| **Dependencies** | All dependencies (`node-media-server`, `ws`, `protobufjs`) are pinned to latest versions with no known CVEs. `protobufjs` v7.5.4 includes the fix for CVE-2023-36665 (Prototype Pollution) |
+| **Token persistence** | Refresh tokens are stored in Homebridge's own storage directory (`nanit-tokens.json`) — not in any external or internal HAP storage API |
+| **Dependencies** | All dependencies (`node-media-server`, `ws`, `protobufjs`) are pinned to latest versions with no known CVEs |
 
-### Recommended go2rtc config (security hardened)
+## Changelog
 
-```yaml
-api:
-  listen: 127.0.0.1:1984   # localhost only — blocks external API access
+### v1.1.0
+- Added audio to cloud streaming mode
+- Added motion detection (HomeKit MotionSensor)
+- Added independent sensor polling every 60s (configurable via `sensorInterval`)
+- `auto` mode now falls back to cloud if local stream fails
+- Replaced internal `HAPStorage` API with file-based token storage
+- Fixed hardcoded `hap-nodejs` internal import paths in recording delegate
+- `nanit-auth` CLI is now properly registered as a bin command
+- Fixed CLI example config (removed misleading `password` field)
 
-rtsp:
-  listen: 127.0.0.1:8554   # localhost only — blocks external RTSP access
-
-log:
-  level: warn
-```
+### v1.0.0
+- Initial release
 
 ## License
 
