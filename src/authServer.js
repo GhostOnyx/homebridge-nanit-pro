@@ -187,7 +187,11 @@ async function handleLogin(body) {
     try {
         response = await fetch(`${API_BASE}/login`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'nanit-api-version': '1' },
+            headers: {
+                'Content-Type': 'application/json',
+                'nanit-api-version': '1',
+                'user-agent': 'Nanit/2.0.6 (com.nanit.app; build:2; iOS 16.0.0) Alamofire/5.4.4',
+            },
             body: JSON.stringify({ email, password }),
             signal: controller.signal,
         });
@@ -215,7 +219,11 @@ async function handleMfa(body) {
     try {
         response = await fetch(`${API_BASE}/login`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'nanit-api-version': '1' },
+            headers: {
+                'Content-Type': 'application/json',
+                'nanit-api-version': '1',
+                'user-agent': 'Nanit/2.0.6 (com.nanit.app; build:2; iOS 16.0.0) Alamofire/5.4.4',
+            },
             body: JSON.stringify({ email, password, mfa_token, mfa_code }),
             signal: controller.signal,
         });
