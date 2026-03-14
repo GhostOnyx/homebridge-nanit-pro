@@ -271,13 +271,26 @@ function startAuthServer(port, log) {
         res.end();
     });
 
-    server.listen(port, () => {
-        log.info(`Nanit auth page available at http://localhost:${port}/auth`);
-    });
+    const tryListen = (attempt) => {
+        server.listen(port, () => {
+            log.info(`Nanit auth page available at http://localhost:${port}/auth`);
+        });
+    };
 
     server.on('error', err => {
-        log.warn(`Auth server failed to start on port ${port}: ${err.message}`);
+        if (err.code === 'EADDRINUSE' && server._retries < 5) {
+            server._retries = (server._retries || 0) + 1;
+            setTimeout(() => {
+                server.close();
+                tryListen();
+            }, 3000);
+        } else {
+            log.warn(`Auth server could not start on port ${port}: ${err.message}`);
+        }
     });
+
+    server._retries = 0;
+    tryListen();
 
     return server;
 }
