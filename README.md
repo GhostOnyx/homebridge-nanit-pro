@@ -128,6 +128,34 @@ Using go2rtc as a relay means:
 **Token expired**
 - Run `npx nanit-auth` to get a fresh refresh token and update your config
 
+## Security
+
+The following security measures are built into this plugin:
+
+| Area | Detail |
+|------|--------|
+| **go2rtc API & RTSP** | Bound to `127.0.0.1` — not reachable from other devices on the network |
+| **Access token never logged** | The Nanit access token is redacted in all log output |
+| **No shell injection** | ffmpeg is launched via `child_process.spawn()` with an arguments array, never a shell string — user-controlled values cannot inject shell commands |
+| **Refresh token preferred over password** | Using a refresh token means your Nanit password is never stored on disk. Password login is intentionally rate-limited to prevent MFA spam |
+| **SRTP encrypted video** | All HomeKit video streams are encrypted end-to-end using SRTP (AES-CM-128-HMAC-SHA1-80) |
+| **WSS signalling** | The WebSocket connection to Nanit's signalling server uses TLS (`wss://`) |
+| **RTMP port 1935** | Must be accessible from the camera on your LAN (required for local streaming). It is not exposed to the internet — ensure your router does not forward this port |
+| **Dependencies** | All dependencies (`node-media-server`, `ws`, `protobufjs`) are pinned to latest versions with no known CVEs. `protobufjs` v7.5.4 includes the fix for CVE-2023-36665 (Prototype Pollution) |
+
+### Recommended go2rtc config (security hardened)
+
+```yaml
+api:
+  listen: 127.0.0.1:1984   # localhost only — blocks external API access
+
+rtsp:
+  listen: 127.0.0.1:8554   # localhost only — blocks external RTSP access
+
+log:
+  level: warn
+```
+
 ## License
 
 MIT © [GhostOnyx](https://github.com/GhostOnyx)
