@@ -129,13 +129,18 @@ async function main() {
             const data = await mfaResponse.json();
             printResult(data.refresh_token);
         }
+        else if (mfaResponse.status === 429) {
+            console.error('\n❌ Rate limited by Nanit. Wait 5 minutes before trying again.');
+            console.error('Tip: do not run nanit-auth multiple times in quick succession.');
+        }
         else {
             const error = await mfaResponse.text();
-            console.error(`\n❌ MFA verification failed: ${error}`);
+            console.error(`\n❌ MFA verification failed (${mfaResponse.status}): ${error}`);
         }
     }
     else if (loginResponse.status === 429) {
-        console.error('\n❌ Too many requests. Please wait a few minutes and try again.');
+        console.error('\n❌ Rate limited by Nanit. Wait 5 minutes before trying again.');
+        console.error('Tip: do not run nanit-auth multiple times in quick succession.');
     }
     else {
         const error = await loginResponse.text();
