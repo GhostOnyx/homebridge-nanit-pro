@@ -24,8 +24,10 @@ class NanitPlatform {
         this.log = log;
         this.config = config;
         this.api = api;
-        const authPort = this.config.authPort || 8586;
-        this.authServer = startAuthServer(authPort, this.log);
+        if (this.config.authServer !== false) {
+            const authPort = this.config.authPort || 8586;
+            this.authServer = startAuthServer(authPort, this.log);
+        }
         if (!this.config.email) {
             this.log.error('Email is required in config');
             return;
@@ -59,8 +61,7 @@ class NanitPlatform {
             throw new Error('Authentication disabled (circuit breaker)');
         }
         try {
-            const configRefreshToken = this.config.refreshToken;
-            const storedToken = configRefreshToken || this._loadToken(`nanit_refresh_${this.config.email}`);
+            const storedToken = this._loadToken(`nanit_refresh_${this.config.email}`) || this.config.refreshToken;
             if (storedToken && typeof storedToken === 'string') {
                 this.log.debug('Found stored refresh token, attempting refresh');
                 try {

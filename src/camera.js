@@ -31,8 +31,8 @@ class NanitCamera {
             .setCharacteristic(this.hap.Characteristic.Model, 'Nanit Camera')
             .setCharacteristic(this.hap.Characteristic.SerialNumber, baby.camera?.uid || baby.uid)
             .setCharacteristic(this.hap.Characteristic.FirmwareRevision, '1.0.0');
-        this.setupCamera();
         this.setupSensors();
+        this.setupCamera();
     }
     setupCamera() {
         const streamMode = this.platform.config.streamMode || 'cloud';

@@ -34,14 +34,21 @@ class NanitStreamingDelegate {
         this.log.debug(`[${this.name}] Snapshot URL: rtmps://media-secured.nanit.com/nanit/[baby_uid].[token_redacted]`);
         const ffmpeg = (0, child_process_1.spawn)('ffmpeg', ffmpegArgs, { env: process.env });
         let imageBuffer = Buffer.alloc(0);
+        const snapshotTimeout = setTimeout(() => {
+            this.log.warn(`[${this.name}] Snapshot timed out, killing ffmpeg`);
+            ffmpeg.kill('SIGTERM');
+            safeCallback(new Error('Snapshot timed out'));
+        }, 10000);
         ffmpeg.stdout.on('data', (data) => {
             imageBuffer = Buffer.concat([imageBuffer, data]);
         });
         ffmpeg.on('error', (error) => {
+            clearTimeout(snapshotTimeout);
             this.log.error(`[${this.name}] FFmpeg snapshot error:`, error.message);
             safeCallback(error);
         });
         ffmpeg.on('close', () => {
+            clearTimeout(snapshotTimeout);
             if (imageBuffer.length > 0) {
                 safeCallback(undefined, imageBuffer);
             }
