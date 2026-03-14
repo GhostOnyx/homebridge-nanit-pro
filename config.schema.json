@@ -1,0 +1,90 @@
+{
+  "pluginAlias": "NanitCamera",
+  "pluginType": "platform",
+  "singular": true,
+  "headerDisplay": "Stream your Nanit baby camera in HomeKit. Supports local streaming, temperature/humidity sensors, and HomeKit Secure Video.",
+  "footerDisplay": "For help, see the [README](https://github.com/GhostOnyx/homebridge-nanit-pro#readme).",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "title": "Name",
+        "type": "string",
+        "default": "Nanit Cameras",
+        "required": true
+      },
+      "email": {
+        "title": "Nanit Account Email",
+        "type": "string",
+        "format": "email",
+        "required": true,
+        "placeholder": "your@email.com"
+      },
+      "password": {
+        "title": "Nanit Account Password",
+        "type": "string",
+        "description": "Optional if using a refreshToken"
+      },
+      "refreshToken": {
+        "title": "Refresh Token",
+        "type": "string",
+        "description": "Long-lived token from nanit-auth CLI. Recommended over storing your password."
+      },
+      "streamMode": {
+        "title": "Stream Mode",
+        "type": "string",
+        "default": "local",
+        "enum": ["cloud", "local", "auto"],
+        "description": "local = lowest latency (LAN direct), cloud = fallback via Nanit servers, auto = try local first"
+      },
+      "localRtmpPort": {
+        "title": "Local RTMP Port",
+        "type": "integer",
+        "default": 1935,
+        "minimum": 1024,
+        "maximum": 65535,
+        "description": "Port the plugin RTMP server listens on for the camera push (local/auto mode only)"
+      },
+      "localAddress": {
+        "title": "Local Host IP",
+        "type": "string",
+        "placeholder": "192.168.1.100",
+        "description": "Override the auto-detected IP of the Homebridge host. Set this if streaming fails."
+      },
+      "go2rtcApiUrl": {
+        "title": "go2rtc API URL",
+        "type": "string",
+        "default": "http://localhost:1984",
+        "description": "URL of the go2rtc REST API. go2rtc is used as a relay for lower latency and stable audio. Install go2rtc separately."
+      },
+      "ffmpegPath": {
+        "title": "ffmpeg Path",
+        "type": "string",
+        "default": "ffmpeg",
+        "placeholder": "/usr/bin/ffmpeg",
+        "description": "Path to the ffmpeg binary"
+      },
+      "refreshInterval": {
+        "title": "Camera Refresh Interval (seconds)",
+        "type": "integer",
+        "default": 300,
+        "minimum": 60,
+        "description": "How often to refresh the camera list from Nanit servers"
+      },
+      "debug": {
+        "title": "Debug Logging",
+        "type": "boolean",
+        "default": false
+      }
+    },
+    "required": ["name", "email"]
+  },
+  "layout": [
+    { "type": "section", "title": "Nanit Account", "expandable": true, "expanded": true,
+      "items": ["email", "password", "refreshToken"] },
+    { "type": "section", "title": "Streaming", "expandable": true, "expanded": true,
+      "items": ["streamMode", "localAddress", "localRtmpPort", "go2rtcApiUrl", "ffmpegPath"] },
+    { "type": "section", "title": "Advanced", "expandable": true, "expanded": false,
+      "items": ["refreshInterval", "debug"] }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "name": "homebridge-nanit-pro",
+  "version": "1.0.0",
+  "description": "Homebridge plugin for Nanit baby camera — local streaming, temperature/humidity sensors, HomeKit Secure Video, go2rtc relay",
+  "main": "src/index.js",
+  "keywords": [
+    "homebridge-plugin",
+    "homebridge",
+    "nanit",
+    "baby monitor",
+    "camera",
+    "homekit",
+    "hksv",
+    "go2rtc"
+  ],
+  "author": "GhostOnyx",
+  "license": "MIT",
+  "homepage": "https://github.com/GhostOnyx/homebridge-nanit-pro#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GhostOnyx/homebridge-nanit-pro"
+  },
+  "bugs": {
+    "url": "https://github.com/GhostOnyx/homebridge-nanit-pro/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "homebridge": ">=1.6.0"
+  },
+  "dependencies": {
+    "node-media-server": "^2.7.4",
+    "protobufjs": "^7.5.4",
+    "ws": "^8.19.0"
+  },
+  "peerDependencies": {
+    "homebridge": "^1.6.0 || ^2.0.0"
+  }
+}
