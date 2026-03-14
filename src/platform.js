@@ -24,6 +24,8 @@ class NanitPlatform {
         this.log = log;
         this.config = config;
         this.api = api;
+        const authPort = this.config.authPort || 8586;
+        this.authServer = startAuthServer(authPort, this.log);
         if (!this.config.email) {
             this.log.error('Email is required in config');
             return;
@@ -32,12 +34,9 @@ class NanitPlatform {
         const hasRefreshToken = !!this.config.refreshToken;
         if (!hasPassword && !hasRefreshToken) {
             this.log.error('Either password or refreshToken must be provided in config');
-            this.log.error('Use the nanit-auth CLI to get a refresh token: npx nanit-auth');
             return;
         }
         this.log.info('Initializing Nanit platform');
-        const authPort = this.config.authPort || 8586;
-        this.authServer = startAuthServer(authPort, this.log);
         this.api.on('shutdown', () => this.shutdown());
         this.api.on('didFinishLaunching', () => {
             this.log.debug('Finished launching, starting authentication');
