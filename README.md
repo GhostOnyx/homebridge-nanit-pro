@@ -88,6 +88,7 @@ Follow the prompts — it will output a `refreshToken` to paste into your config
 | `ffmpegPath` | `ffmpeg` | Path to the ffmpeg binary |
 | `refreshInterval` | `300` | How often to refresh the camera list (seconds) |
 | `sensorInterval` | `60` | How often to poll temperature & humidity (seconds) |
+| `allowInsecureTls` | `false` | Disable TLS certificate verification for cloud RTMPS streams. Only enable if cloud streaming fails with a TLS error and switching to a properly built ffmpeg is not possible. See Security section. |
 
 ## HomeKit Secure Video
 
@@ -139,8 +140,8 @@ To use motion as a HomeKit automation trigger, set up a Home automation on the M
 
 **Cloud stream fails with "IO Error: -9806" or TLS error**
 - This is a TLS handshake failure between ffmpeg and Nanit's RTMPS server, commonly seen with the [tessus macOS ffmpeg build](https://evermeet.cx/ffmpeg/) on newer macOS versions
-- Fixed in v1.1.4 — update to the latest version
-- If you are already on v1.1.4 and still see this, try a [Homebrew ffmpeg](https://formulae.brew.sh/formula/ffmpeg) build (`brew install ffmpeg`) and set `ffmpegPath` to `/opt/homebrew/bin/ffmpeg`
+- First try a [Homebrew ffmpeg](https://formulae.brew.sh/formula/ffmpeg) build (`brew install ffmpeg`) and set `ffmpegPath` to `/opt/homebrew/bin/ffmpeg`
+- If switching ffmpeg is not possible, enable `allowInsecureTls: true` in config as a last resort — note this disables certificate verification (see Security section)
 
 **No audio / choppy audio**
 - Ensure go2rtc is running (`systemctl status go2rtc`)
@@ -158,6 +159,8 @@ To use motion as a HomeKit automation trigger, set up a Home automation on the M
 | Area | Detail |
 |------|--------|
 | **go2rtc API & RTSP** | Bound to `127.0.0.1` — not reachable from other devices on the network |
+| **Auth server** | Bound to `127.0.0.1` — the token generation page is only reachable from the Homebridge host itself; access it via SSH tunnel or a local browser session |
+| **`allowInsecureTls`** | Off by default. When enabled, ffmpeg skips TLS certificate verification for RTMPS connections — an on-path attacker could intercept the stream or steal the access token. Prefer switching to a properly compiled ffmpeg instead |
 | **Access token never logged** | The Nanit access token is redacted in all log output |
 | **No shell injection** | ffmpeg is launched via `child_process.spawn()` with an arguments array, never a shell string |
 | **Refresh token preferred over password** | Using a refresh token means your Nanit password is never stored on disk. Password login is intentionally disabled in the plugin to prevent MFA spam |
@@ -167,6 +170,12 @@ To use motion as a HomeKit automation trigger, set up a Home automation on the M
 | **Dependencies** | All dependencies (`node-media-server`, `ws`, `protobufjs`) are pinned to latest versions with no known CVEs |
 
 ## Changelog
+
+### v1.1.6
+- Security: auth server now binds to `127.0.0.1` only (was `0.0.0.0` — any LAN device could reach the Nanit login proxy)
+- Security: auth server POST body capped at 10 KB to prevent memory exhaustion
+- Security: `-tls_verify 0` is no longer applied by default; TLS certificate verification is now only disabled when `allowInsecureTls: true` is explicitly set in config
+- Added `allowInsecureTls` config option (default `false`) for users whose ffmpeg build cannot verify Nanit's RTMPS certificate chain
 
 ### v1.1.5
 - README: expanded troubleshooting section with guidance for the ~28s stream failure and macOS TLS error, documented `localAddress` use cases

@@ -44,13 +44,17 @@ class NanitCamera {
         const hasValidCameraUid = cameraUid && cameraUid.length > 0;
         const ffmpegPath = this.platform.config.ffmpegPath || 'ffmpeg';
         const go2rtcApiUrl = this.platform.config.go2rtcApiUrl || 'http://localhost:1984';
+        const allowInsecureTls = !!this.platform.config.allowInsecureTls;
+        if (allowInsecureTls) {
+            this.log.warn(`[${this.getName()}] allowInsecureTls is enabled — TLS certificate verification is disabled for cloud streams`);
+        }
         if (streamMode === 'local' && localIp && hasValidCameraUid) {
             this.log.info(`[${this.getName()}] Using local streaming mode (${localIp})`);
-            this.streamingDelegate = new localStreamingDelegate_1.LocalStreamingDelegate(this.hap, this.log, this.baby.uid, localIp, () => this.platform.getAccessToken(), rtmpPort, cameraUid, this.baby.uid, this.platform.config.localAddress, (t, h) => this.updateSensors(t, h), ffmpegPath, go2rtcApiUrl, (detected) => this.updateMotion(detected));
+            this.streamingDelegate = new localStreamingDelegate_1.LocalStreamingDelegate(this.hap, this.log, this.baby.uid, localIp, () => this.platform.getAccessToken(), rtmpPort, cameraUid, this.baby.uid, this.platform.config.localAddress, (t, h) => this.updateSensors(t, h), ffmpegPath, go2rtcApiUrl, (detected) => this.updateMotion(detected), allowInsecureTls);
         }
         else if (streamMode === 'auto' && localIp && hasValidCameraUid) {
             this.log.info(`[${this.getName()}] Using auto streaming mode (will try local first)`);
-            this.streamingDelegate = new localStreamingDelegate_1.LocalStreamingDelegate(this.hap, this.log, this.baby.uid, localIp, () => this.platform.getAccessToken(), rtmpPort, cameraUid, this.baby.uid, this.platform.config.localAddress, (t, h) => this.updateSensors(t, h), ffmpegPath, go2rtcApiUrl, (detected) => this.updateMotion(detected));
+            this.streamingDelegate = new localStreamingDelegate_1.LocalStreamingDelegate(this.hap, this.log, this.baby.uid, localIp, () => this.platform.getAccessToken(), rtmpPort, cameraUid, this.baby.uid, this.platform.config.localAddress, (t, h) => this.updateSensors(t, h), ffmpegPath, go2rtcApiUrl, (detected) => this.updateMotion(detected), allowInsecureTls);
             this.streamingDelegate.cloudFallbackGetUrl = () => this.getStreamUrl();
         }
         else {
@@ -68,7 +72,7 @@ class NanitCamera {
             else {
                 this.log.info(`[${this.getName()}] Using cloud streaming mode`);
             }
-            this.streamingDelegate = new streamingDelegate_1.NanitStreamingDelegate(this.hap, this.log, this.getName(), () => this.getStreamUrl());
+            this.streamingDelegate = new streamingDelegate_1.NanitStreamingDelegate(this.hap, this.log, this.getName(), () => this.getStreamUrl(), allowInsecureTls);
         }
         this.recordingDelegate = new NanitRecordingDelegate(this.log, () => this.currentRtmpUrl);
         const options = {

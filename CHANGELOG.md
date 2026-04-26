@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.6] - 2026-04-26
+
+### Security
+- Auth server now binds to `127.0.0.1` only — previously bound to `0.0.0.0`, exposing the Nanit login proxy to all devices on the LAN
+- Auth server POST body capped at 10 KB to prevent memory exhaustion from oversized requests
+- `-tls_verify 0` removed as a default ffmpeg flag; TLS certificate verification is now only skipped when `allowInsecureTls: true` is explicitly set in config
+
+### Added
+- `allowInsecureTls` config option (default `false`) — opt-in TLS verification bypass for cloud RTMPS streams, for users whose ffmpeg build cannot verify Nanit's certificate chain
+
+---
+
 ## [1.1.5] - 2026-04-26
 
 ### Changed

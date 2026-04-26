@@ -65,7 +65,7 @@ class LocalStreamingDelegate {
     sensorPollTimer;
     currentRtmpUrl;
     sharedWs = null;
-    constructor(hap, log, name, localIp, getAccessToken, rtmpPort = 1935, cameraUid, babyUid, configuredLocalAddress, onSensorData, ffmpegPath = 'ffmpeg', go2rtcApiUrl = 'http://localhost:1984', onMotion = null) {
+    constructor(hap, log, name, localIp, getAccessToken, rtmpPort = 1935, cameraUid, babyUid, configuredLocalAddress, onSensorData, ffmpegPath = 'ffmpeg', go2rtcApiUrl = 'http://localhost:1984', onMotion = null, allowInsecureTls = false) {
         this.hap = hap;
         this.log = log;
         this.name = name;
@@ -80,6 +80,7 @@ class LocalStreamingDelegate {
         this.cloudFallbackGetUrl = null;
         this.ffmpegPath = ffmpegPath;
         this.go2rtcApiUrl = go2rtcApiUrl || 'http://localhost:1984';
+        this.allowInsecureTls = allowInsecureTls;
     }
     startRtmpServer() {
         if (this.rtmpServer) {
@@ -226,8 +227,9 @@ class LocalStreamingDelegate {
             }
         };
         const cloudUrl = `rtmps://media-secured.nanit.com/nanit/${this.babyUid}.${this.getAccessToken()}`;
+        const tlsArgs = this.allowInsecureTls ? ['-tls_verify', '0'] : [];
         const ffmpegArgs = [
-            '-tls_verify', '0',
+            ...tlsArgs,
             '-timeout', '10000000',
             '-i', cloudUrl,
             '-frames:v', '1',

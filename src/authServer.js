@@ -251,7 +251,15 @@ function startAuthServer(port, log) {
         }
         if (req.method === 'POST' && (req.url === '/auth/login' || req.url === '/auth/mfa')) {
             let body = '';
-            req.on('data', chunk => body += chunk);
+            req.on('data', chunk => {
+                if (body.length + chunk.length > 10240) {
+                    res.writeHead(413, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 'error', message: 'Request too large' }));
+                    req.destroy();
+                    return;
+                }
+                body += chunk;
+            });
             req.on('end', async () => {
                 try {
                     const data = JSON.parse(body);
@@ -272,7 +280,7 @@ function startAuthServer(port, log) {
     });
 
     const tryListen = (attempt) => {
-        server.listen(port, () => {
+        server.listen(port, '127.0.0.1', () => {
             log.info(`Nanit auth page available at http://localhost:${port}/auth`);
         });
     };

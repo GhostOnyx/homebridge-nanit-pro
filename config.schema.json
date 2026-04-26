@@ -83,6 +83,12 @@
         "title": "Debug Logging",
         "type": "boolean",
         "default": false
+      },
+      "allowInsecureTls": {
+        "title": "Allow Insecure TLS (disable certificate verification)",
+        "type": "boolean",
+        "default": false,
+        "description": "Disables TLS certificate verification for cloud RTMPS streams. Only enable this if cloud streaming fails with a TLS error and you are unable to use a correctly built ffmpeg. Enabling this reduces security — use a Homebrew or properly compiled ffmpeg instead where possible."
       }
     },
     "required": ["name", "email"]
@@ -93,6 +99,6 @@
     { "type": "section", "title": "Streaming", "expandable": true, "expanded": true,
       "items": ["streamMode", "localAddress", "localRtmpPort", "go2rtcApiUrl", "ffmpegPath"] },
     { "type": "section", "title": "Advanced", "expandable": true, "expanded": false,
-      "items": ["refreshInterval", "authPort", "debug"] }
+      "items": ["refreshInterval", "authPort", "debug", "allowInsecureTls"] }
   ]
 }

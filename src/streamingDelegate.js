@@ -9,11 +9,12 @@ class NanitStreamingDelegate {
     getStreamUrl;
     sessions = new Map();
     controller;
-    constructor(hap, log, name, getStreamUrl) {
+    constructor(hap, log, name, getStreamUrl, allowInsecureTls = false) {
         this.hap = hap;
         this.log = log;
         this.name = name;
         this.getStreamUrl = getStreamUrl;
+        this.allowInsecureTls = allowInsecureTls;
     }
     async handleSnapshotRequest(request, callback) {
         this.log.debug(`[${this.name}] Snapshot requested: ${request.width}x${request.height}`);
@@ -25,8 +26,9 @@ class NanitStreamingDelegate {
             }
         };
         const streamUrl = this.getStreamUrl();
+        const tlsArgs = this.allowInsecureTls ? ['-tls_verify', '0'] : [];
         const ffmpegArgs = [
-            '-tls_verify', '0',
+            ...tlsArgs,
             '-timeout', '10000000',
             '-i', streamUrl,
             '-frames:v', '1',
@@ -117,9 +119,10 @@ class NanitStreamingDelegate {
             const audioPort = info.audioPort;
             const audioSrtpKey = info.audioSRTP.toString('base64');
             const audioSsrc = info.audioSSRC;
+            const tlsArgs = this.allowInsecureTls ? ['-tls_verify', '0'] : [];
             const ffmpegArgs = [
                 '-re',
-                '-tls_verify', '0',
+                ...tlsArgs,
                 '-timeout', '10000000',
                 '-i', streamUrl,
                 '-map', '0:v',
