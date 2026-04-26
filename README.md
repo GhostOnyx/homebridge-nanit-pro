@@ -16,6 +16,7 @@ A [Homebridge](https://homebridge.io) plugin that brings your **Nanit baby camer
 ## Requirements
 
 - [Homebridge](https://homebridge.io) v1.6.0 or later
+- Node.js v20 or later
 - [ffmpeg](https://ffmpeg.org) with `libx264` and `libopus` support
 - [go2rtc](https://github.com/AlexxIT/go2rtc) v1.9+ (required for local mode; strongly recommended for stable audio)
 - A Nanit baby camera on your local network
@@ -170,6 +171,9 @@ To use motion as a HomeKit automation trigger, set up a Home automation on the M
 | **Dependencies** | All dependencies (`node-media-server`, `ws`, `protobufjs`) are pinned to latest versions with no known CVEs |
 
 ## Changelog
+
+### v1.1.7
+- Minimum Node.js version updated to v20 (Node 18 is EOL)
 
 ### v1.1.6
 - Security: auth server now binds to `127.0.0.1` only (was `0.0.0.0` — any LAN device could reach the Nanit login proxy)

@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.7] - 2026-04-26
+
+### Changed
+- Minimum Node.js version updated to v20 (Node 18 reached end-of-life April 2025)
+- Fixed `repository.url` field in package.json
+
+---
+
 ## [1.1.6] - 2026-04-26
 
 ### Security
