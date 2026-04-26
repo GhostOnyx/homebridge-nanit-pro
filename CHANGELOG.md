@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.5] - 2026-04-26
+
+### Changed
+- README: expanded troubleshooting section, documented `localAddress` use cases, full changelog history
+
+---
+
 ## [1.1.4] - 2026-04-26
 
 ### Fixed

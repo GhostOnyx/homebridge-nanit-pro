@@ -168,6 +168,9 @@ To use motion as a HomeKit automation trigger, set up a Home automation on the M
 
 ## Changelog
 
+### v1.1.5
+- README: expanded troubleshooting section with guidance for the ~28s stream failure and macOS TLS error, documented `localAddress` use cases
+
 ### v1.1.4
 - Fixed local stream stopping at ~28s: replaced the fixed pre-FFmpeg delay with a go2rtc stream readiness poll — FFmpeg now starts only once go2rtc confirms the camera is pushing RTMP
 - Fixed cloud RTMPS "IO Error: -9806" TLS handshake failure on macOS (tessus ffmpeg build)
