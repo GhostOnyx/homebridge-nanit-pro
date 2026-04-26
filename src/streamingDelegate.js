@@ -26,6 +26,8 @@ class NanitStreamingDelegate {
         };
         const streamUrl = this.getStreamUrl();
         const ffmpegArgs = [
+            '-tls_verify', '0',
+            '-timeout', '10000000',
             '-i', streamUrl,
             '-frames:v', '1',
             '-f', 'image2',
@@ -117,6 +119,8 @@ class NanitStreamingDelegate {
             const audioSsrc = info.audioSSRC;
             const ffmpegArgs = [
                 '-re',
+                '-tls_verify', '0',
+                '-timeout', '10000000',
                 '-i', streamUrl,
                 '-map', '0:v',
                 '-vcodec', 'libx264',
@@ -152,10 +156,8 @@ class NanitStreamingDelegate {
             const ffmpeg = (0, child_process_1.spawn)('ffmpeg', ffmpegArgs, { env: process.env });
             session.process = ffmpeg;
             ffmpeg.stderr.on('data', (data) => {
-                const message = data.toString();
-                if (message.includes('error') || message.includes('Error')) {
-                    this.log.error(`[${this.name}] FFmpeg:`, message);
-                }
+                const message = data.toString().trim();
+                if (message) this.log.debug(`[${this.name}] FFmpeg: ${message}`);
             });
             ffmpeg.on('error', (error) => {
                 this.log.error(`[${this.name}] FFmpeg process error:`, error.message);

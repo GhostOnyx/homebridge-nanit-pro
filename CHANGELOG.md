@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.1.4] - 2026-04-26
+
+### Fixed
+- **Local stream stops at ~28s**: Replaced the fixed 2500ms pre-FFmpeg wait with a go2rtc stream readiness poll — FFmpeg now starts only once go2rtc reports an active producer (camera is actually pushing RTMP), eliminating the race condition that caused HomeKit to time out waiting for frames
+- **Cloud RTMPS "IO Error: -9806"**: Added `-tls_verify 0` and `-timeout 10000000` to cloud RTMPS inputs; the TLS handshake was failing on macOS due to certificate chain validation in the tessus FFmpeg build
+- **FFmpeg output hidden**: Both streaming delegates now log all FFmpeg stderr at debug level (previously cloud mode filtered to lines containing "error"/"Error" only, making failures invisible)
+- Added `-stimeout 10000000` to local RTSP input so FFmpeg reports a clear connection error immediately if go2rtc is not running, rather than hanging silently
+
+---
+
 ## [1.1.3] - 2026-03-14
 
 ### Fixed

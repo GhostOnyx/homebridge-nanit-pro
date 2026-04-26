@@ -227,6 +227,8 @@ class LocalStreamingDelegate {
         };
         const cloudUrl = `rtmps://media-secured.nanit.com/nanit/${this.babyUid}.${this.getAccessToken()}`;
         const ffmpegArgs = [
+            '-tls_verify', '0',
+            '-timeout', '10000000',
             '-i', cloudUrl,
             '-frames:v', '1',
             '-f', 'image2',
@@ -342,8 +344,34 @@ class LocalStreamingDelegate {
             this.log.debug(`[${this.name}] Shared WS closed`);
             this.sharedWs = null;
         });
-        // Wait for camera to start pushing and go2rtc to connect
-        await new Promise(resolve => setTimeout(resolve, 2500));
+        // Wait until go2rtc actually has a producer (camera is pushing RTMP)
+        // before handing off to FFmpeg. The fixed 2500ms delay was too short
+        // and caused FFmpeg to time out on an empty RTSP stream after ~28s.
+        await this._waitForGo2rtcStream(`nanit_${this.babyUid}`, 12000);
+    }
+    async _waitForGo2rtcStream(streamName, timeoutMs = 12000) {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+            try {
+                const data = await new Promise((resolve, reject) => {
+                    const http = require('http');
+                    const req = http.request(`${this.go2rtcApiUrl}/api/streams`, (res) => {
+                        let body = '';
+                        res.on('data', chunk => body += chunk);
+                        res.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve(null); } });
+                    });
+                    req.on('error', reject);
+                    req.end();
+                });
+                if (data && data[streamName]?.producers?.length > 0) {
+                    this.log.debug(`[${this.name}] go2rtc stream ready: ${streamName}`);
+                    return true;
+                }
+            } catch (_) {}
+            await new Promise(r => setTimeout(r, 500));
+        }
+        this.log.warn(`[${this.name}] Timed out waiting for go2rtc stream "${streamName}" — camera may not be pushing RTMP, or go2rtc is not running at ${this.go2rtcApiUrl}`);
+        return false;
     }
     _stopSharedStreamIfIdle() {
         if (this.sessions.size > 0) return;
@@ -424,7 +452,7 @@ class LocalStreamingDelegate {
                 this.log.info(`[${this.name}] SRTP target: ${target}:${videoPort} (audio: ${info.audioPort}), profile: ${x264Profile}/${x264Level}, ${video.width}x${video.height}@${video.fps}fps ${videoBitrate}kbps`);
                 const inputArgs = usingCloudFallback
                     ? ['-re', '-i', rtspUrl]
-                    : ['-rtsp_transport', 'tcp', '-i', rtspUrl];
+                    : ['-rtsp_transport', 'tcp', '-stimeout', '10000000', '-i', rtspUrl];
                 const ffmpegArgs = [
                     ...inputArgs,
                     // Video stream
@@ -469,7 +497,7 @@ class LocalStreamingDelegate {
                 session.process = ffmpeg;
                 ffmpeg.stderr.on('data', (data) => {
                     const message = data.toString().trim();
-                    if (message) this.log.info(`[${this.name}] FFmpeg: ${message}`);
+                    if (message) this.log.debug(`[${this.name}] FFmpeg: ${message}`);
                 });
                 ffmpeg.on('error', (error) => {
                     this.log.error(`[${this.name}] FFmpeg process error:`, error.message);
