@@ -351,22 +351,28 @@ class LocalStreamingDelegate {
         // and caused FFmpeg to time out on an empty RTSP stream after ~28s.
         await this._waitForGo2rtcStream(`nanit_${this.babyUid}`, 12000);
     }
-    async _waitForGo2rtcStream(streamName, timeoutMs = 12000) {
+    async _waitForGo2rtcStream(streamName, timeoutMs = 15000) {
         const start = Date.now();
         while (Date.now() - start < timeoutMs) {
             try {
                 const data = await new Promise((resolve, reject) => {
                     const http = require('http');
-                    const req = http.request(`${this.go2rtcApiUrl}/api/streams`, (res) => {
+                    const req = http.request(`${this.go2rtcApiUrl}/api/streams`, { timeout: 2000 }, (res) => {
                         let body = '';
                         res.on('data', chunk => body += chunk);
                         res.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve(null); } });
                     });
                     req.on('error', reject);
+                    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
                     req.end();
                 });
-                if (data && data[streamName]?.producers?.length > 0) {
-                    this.log.debug(`[${this.name}] go2rtc stream ready: ${streamName}`);
+                const producers = data?.[streamName]?.producers;
+                this.log.debug(`[${this.name}] go2rtc check [${streamName}]: producers=${JSON.stringify(producers)}`);
+                // Wait for actual tracks — go2rtc sets producers[] as soon as it starts
+                // pulling the URL, but tracks[] is only populated when real data flows.
+                const ready = producers?.some(p => Array.isArray(p.tracks) && p.tracks.length > 0);
+                if (ready) {
+                    this.log.info(`[${this.name}] go2rtc stream ready: ${streamName}`);
                     return true;
                 }
             } catch (_) {}
@@ -494,7 +500,7 @@ class LocalStreamingDelegate {
                     '-srtp_out_params', audioSrtpKey,
                     `srtp://${target}:${info.audioPort}?rtcpport=${info.audioPort}&pkt_size=188`,
                 ];
-                this.log.info(`[${this.name}] Starting ffmpeg: ${this.ffmpegPath}`);
+                this.log.info(`[${this.name}] Starting ffmpeg → ${rtspUrl}`);
                 const ffmpeg = (0, child_process_1.spawn)(this.ffmpegPath, ffmpegArgs, { env: process.env });
                 session.process = ffmpeg;
                 ffmpeg.stderr.on('data', (data) => {
@@ -502,10 +508,10 @@ class LocalStreamingDelegate {
                     if (message) this.log.debug(`[${this.name}] FFmpeg: ${message}`);
                 });
                 ffmpeg.on('error', (error) => {
-                    this.log.error(`[${this.name}] FFmpeg process error:`, error.message);
+                    this.log.error(`[${this.name}] FFmpeg failed to start: ${error.message} (is ffmpeg installed and in PATH?)`);
                 });
-                ffmpeg.on('close', () => {
-                    this.log.info(`[${this.name}] Video stream stopped`);
+                ffmpeg.on('close', (code) => {
+                    this.log.info(`[${this.name}] Video stream stopped (exit code ${code})`);
                 });
                 callback();
             }

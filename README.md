@@ -172,6 +172,12 @@ To use motion as a HomeKit automation trigger, set up a Home automation on the M
 
 ## Changelog
 
+### v1.1.8
+- Fixed local stream stopping immediately: go2rtc readiness check now waits for actual video/audio tracks instead of just a producer entry (go2rtc adds a producer as soon as it starts pulling the RTMP URL, before the camera is actually pushing data)
+- ffmpeg process errors now log at error level with a hint if the binary is missing
+- ffmpeg log now shows which RTSP URL it's connecting to
+- go2rtc poll now includes a 2s HTTP timeout and debug-logs the raw response to aid diagnosis
+
 ### v1.1.7
 - Minimum Node.js version updated to v20 (Node 18 is EOL)
 

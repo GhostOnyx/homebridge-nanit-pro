@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.1.8] - 2026-04-26
+
+### Fixed
+- **Local stream stops immediately**: The go2rtc readiness poll was checking for `producers.length > 0`, but go2rtc adds a producer entry as soon as it starts trying to pull the RTMP URL — before the camera has actually connected and started pushing data. FFmpeg was starting against an empty RTSP stream and exiting immediately. Fixed by checking `producers[].tracks` instead, which go2rtc only populates once real video/audio data is flowing.
+- FFmpeg process errors now log at error level (was debug-only) with a hint about missing binary.
+- go2rtc poll now includes a 2s HTTP request timeout.
+- go2rtc raw response is now logged at debug level to aid diagnosis.
+
+---
+
 ## [1.1.7] - 2026-04-26
 
 ### Changed
