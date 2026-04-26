@@ -17,7 +17,7 @@ A [Homebridge](https://homebridge.io) plugin that brings your **Nanit baby camer
 
 - [Homebridge](https://homebridge.io) v1.6.0 or later
 - [ffmpeg](https://ffmpeg.org) with `libx264` and `libopus` support
-- [go2rtc](https://github.com/AlexxIT/go2rtc) v1.9+ (strongly recommended for stable audio)
+- [go2rtc](https://github.com/AlexxIT/go2rtc) v1.9+ (required for local mode; strongly recommended for stable audio)
 - A Nanit baby camera on your local network
 
 ## Installation
@@ -82,7 +82,7 @@ Follow the prompts — it will output a `refreshToken` to paste into your config
 | `refreshToken` | — | Long-lived token from `npx nanit-auth` **(recommended)** |
 | `password` | — | Your Nanit password (only used once to obtain a refresh token via CLI) |
 | `streamMode` | `local` | `local` = LAN direct, `cloud` = via Nanit servers, `auto` = local with automatic cloud fallback |
-| `localAddress` | auto-detected | Override the Homebridge host IP (only needed if auto-detection picks the wrong interface) |
+| `localAddress` | auto-detected | Override the Homebridge host IP sent to the camera for RTMP push. Set this if the camera cannot reach Homebridge or if streaming silently fails after connecting |
 | `localRtmpPort` | `1935` | Port the plugin's RTMP server listens on |
 | `go2rtcApiUrl` | `http://localhost:1984` | go2rtc REST API URL |
 | `ffmpegPath` | `ffmpeg` | Path to the ffmpeg binary |
@@ -129,15 +129,25 @@ To use motion as a HomeKit automation trigger, set up a Home automation on the M
 
 **Camera shows "No Response"**
 - Check that the Nanit camera and Homebridge host are on the same LAN
-- Set `localAddress` in config to the exact IP of your Homebridge host if auto-detection fails
-- Check Homebridge logs for ffmpeg errors
+- Set `localAddress` in config to the exact LAN IP of your Homebridge host — auto-detection can pick the wrong interface (VPN, secondary adapter)
+- Check Homebridge logs for ffmpeg errors (enable debug logging in the Homebridge UI)
+
+**Stream starts then stops after ~30 seconds with no video**
+- go2rtc must be running before streaming starts — verify with `curl http://localhost:1984/api/streams`
+- The camera pushes RTMP to the IP reported as `Camera push →` in the logs. If that IP is wrong, set `localAddress` to the correct LAN IP
+- Confirm port 1935 is not blocked by a host firewall between the camera and Homebridge
+
+**Cloud stream fails with "IO Error: -9806" or TLS error**
+- This is a TLS handshake failure between ffmpeg and Nanit's RTMPS server, commonly seen with the [tessus macOS ffmpeg build](https://evermeet.cx/ffmpeg/) on newer macOS versions
+- Fixed in v1.1.4 — update to the latest version
+- If you are already on v1.1.4 and still see this, try a [Homebrew ffmpeg](https://formulae.brew.sh/formula/ffmpeg) build (`brew install ffmpeg`) and set `ffmpegPath` to `/opt/homebrew/bin/ffmpeg`
 
 **No audio / choppy audio**
 - Ensure go2rtc is running (`systemctl status go2rtc`)
 - Verify go2rtc API is reachable: `curl http://localhost:1984/api/streams`
 
 **Streaming falls back to cloud unexpectedly**
-- Check the camera's local IP is reachable from the Pi: `ping <camera-ip>`
+- Check the camera's local IP is reachable from the Homebridge host: `ping <camera-ip>`
 - Ensure port 1935 is not blocked by a firewall between the camera and Homebridge
 
 **Token expired**
@@ -158,6 +168,24 @@ To use motion as a HomeKit automation trigger, set up a Home automation on the M
 
 ## Changelog
 
+### v1.1.4
+- Fixed local stream stopping at ~28s: replaced the fixed pre-FFmpeg delay with a go2rtc stream readiness poll — FFmpeg now starts only once go2rtc confirms the camera is pushing RTMP
+- Fixed cloud RTMPS "IO Error: -9806" TLS handshake failure on macOS (tessus ffmpeg build)
+- Fixed FFmpeg output being hidden in cloud mode (stderr was filtered to error-only lines, making failures invisible in logs)
+- FFmpeg now fails fast with a clear error if go2rtc is not running, instead of hanging silently
+
+### v1.1.3
+- Refresh token requests are now mutex-guarded to prevent parallel token refresh on startup
+
+### v1.1.2
+- Motion sensor initialised before camera controller (fixes HKSV motion triggering)
+- Rotated refresh token now takes priority over stale config token on restart
+- Snapshot FFmpeg process killed after 10s if stream is unreachable
+- Auth server can be disabled via `"authServer": false` in config
+
+### v1.1.1
+- Fixed `nanit-auth` MFA prompt being skipped due to readline consuming keystrokes during raw stdin mode
+
 ### v1.1.0
 - Added audio to cloud streaming mode
 - Added motion detection (HomeKit MotionSensor)
@@ -166,7 +194,6 @@ To use motion as a HomeKit automation trigger, set up a Home automation on the M
 - Replaced internal `HAPStorage` API with file-based token storage
 - Fixed hardcoded `hap-nodejs` internal import paths in recording delegate
 - `nanit-auth` CLI is now properly registered as a bin command
-- Fixed CLI example config (removed misleading `password` field)
 
 ### v1.0.0
 - Initial release
