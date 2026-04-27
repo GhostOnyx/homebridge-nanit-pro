@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.10] - 2026-04-27
+
+### Security
+- Updated `protobufjs` to 7.5.5 — fixes critical arbitrary code execution vulnerability (GHSA-xq3m-2v4x-88gg)
+- Resolved high-severity transitive vulnerabilities in `lodash` (GHSA-r5fr-rjxr-66jc, GHSA-f23m-r3pf-42rh) and `path-to-regexp` (GHSA-37ch-88jc-xwx2) via `node-media-server` dependency tree
+
+---
+
 ## [1.1.9] - 2026-04-27
 
 ### Fixed

@@ -173,6 +173,10 @@ To use motion as a HomeKit automation trigger, set up a Home automation on the M
 
 ## Changelog
 
+### v1.1.10
+- Security: updated `protobufjs` to 7.5.5 (critical arbitrary code execution — GHSA-xq3m-2v4x-88gg)
+- Security: resolved high-severity `lodash` and `path-to-regexp` vulnerabilities in the `node-media-server` dependency tree
+
 ### v1.1.9
 - Fixed immediate ffmpeg exit (code 8) on ffmpeg 6.x: `-stimeout` was removed in ffmpeg 6 and is now replaced with `-timeout`
 - Fixed RTMP publisher race: plugin now waits for node-media-server to confirm the camera is pushing RTMP before registering the stream with go2rtc (go2rtc is lazy — it only connects to the RTMP source when an RTSP consumer arrives, so the previous track-readiness poll always timed out unnecessarily)
