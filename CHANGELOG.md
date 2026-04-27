@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.9] - 2026-04-27
+
+### Fixed
+- **ffmpeg exits immediately with code 8 on ffmpeg 6.x**: The `-stimeout` option was removed in ffmpeg 6. Replaced with `-timeout`, which is the correct socket I/O timeout option for RTSP input in ffmpeg 6.
+- **RTMP publisher race with go2rtc**: go2rtc registers a stream entry immediately when asked but only connects to the RTMP source lazily — when an RTSP consumer arrives. The previous approach of polling `_waitForGo2rtcStream` for tracks would always time out because no RTSP consumer existed yet. Fixed by waiting for node-media-server's `postPublish` event to confirm the camera is actually pushing RTMP *before* registering with go2rtc, then starting ffmpeg directly. go2rtc connects to the live RTMP stream immediately when ffmpeg opens the RTSP URL.
+
+---
+
 ## [1.1.8] - 2026-04-26
 
 ### Fixed

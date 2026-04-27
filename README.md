@@ -134,10 +134,11 @@ To use motion as a HomeKit automation trigger, set up a Home automation on the M
 - Set `localAddress` in config to the exact LAN IP of your Homebridge host — auto-detection can pick the wrong interface (VPN, secondary adapter)
 - Check Homebridge logs for ffmpeg errors (enable debug logging in the Homebridge UI)
 
-**Stream starts then stops after ~30 seconds with no video**
+**Stream starts then stops with no video**
 - go2rtc must be running before streaming starts — verify with `curl http://localhost:1984/api/streams`
-- The camera pushes RTMP to the IP reported as `Camera push →` in the logs. If that IP is wrong, set `localAddress` to the correct LAN IP
+- The camera pushes RTMP to the IP reported as `Requesting camera push →` in the logs. If that IP is wrong, set `localAddress` to the correct LAN IP
 - Confirm port 1935 is not blocked by a host firewall between the camera and Homebridge
+- Ensure ffmpeg 6 or later is installed — ffmpeg 5 and earlier used `-stimeout` which was removed in ffmpeg 6
 
 **Cloud stream fails with "IO Error: -9806" or TLS error**
 - This is a TLS handshake failure between ffmpeg and Nanit's RTMPS server, commonly seen with the [tessus macOS ffmpeg build](https://evermeet.cx/ffmpeg/) on newer macOS versions
@@ -171,6 +172,10 @@ To use motion as a HomeKit automation trigger, set up a Home automation on the M
 | **Dependencies** | All dependencies (`node-media-server`, `ws`, `protobufjs`) are pinned to latest versions with no known CVEs |
 
 ## Changelog
+
+### v1.1.9
+- Fixed immediate ffmpeg exit (code 8) on ffmpeg 6.x: `-stimeout` was removed in ffmpeg 6 and is now replaced with `-timeout`
+- Fixed RTMP publisher race: plugin now waits for node-media-server to confirm the camera is pushing RTMP before registering the stream with go2rtc (go2rtc is lazy — it only connects to the RTMP source when an RTSP consumer arrives, so the previous track-readiness poll always timed out unnecessarily)
 
 ### v1.1.8
 - Fixed local stream stopping immediately: go2rtc readiness check now waits for actual video/audio tracks instead of just a producer entry (go2rtc adds a producer as soon as it starts pulling the RTMP URL, before the camera is actually pushing data)
