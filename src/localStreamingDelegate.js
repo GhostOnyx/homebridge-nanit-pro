@@ -98,6 +98,15 @@ class LocalStreamingDelegate {
             },
         };
         this.rtmpServer = new node_media_server_1.default(config);
+        this._rtmpPublishing = new Set();
+        this.rtmpServer.on('postPublish', (id, streamPath) => {
+            this._rtmpPublishing.add(streamPath);
+            this.log.debug(`[${this.name}] RTMP publisher connected: ${streamPath}`);
+        });
+        this.rtmpServer.on('donePublish', (id, streamPath) => {
+            this._rtmpPublishing.delete(streamPath);
+            this.log.debug(`[${this.name}] RTMP publisher disconnected: ${streamPath}`);
+        });
         this.rtmpServer.run();
         this.log.info(`[${this.name}] Local RTMP server started on port ${this.rtmpPort}`);
     }
@@ -334,11 +343,9 @@ class LocalStreamingDelegate {
         const hostIp = this.getHostIp();
         const streamKey = `nanit_${this.babyUid}`;
         const rtmpUrl = `rtmp://${hostIp}:${this.rtmpPort}/live/${streamKey}`;
-        this.log.info(`[${this.name}] Camera push → ${rtmpUrl}`);
+        this.log.info(`[${this.name}] Requesting camera push → ${rtmpUrl}`);
         this.sendStreamingRequest(ws, rtmpUrl);
         this.currentRtmpUrl = rtmpUrl;
-        // Register with go2rtc so it pulls and re-exposes as RTSP
-        await this._registerGo2rtcStream(rtmpUrl);
         this.sendSensorDataRequest(ws);
         if (this.sensorPollTimer) clearInterval(this.sensorPollTimer);
         this.sensorPollTimer = setInterval(() => this.sendSensorDataRequest(ws), 60000);
@@ -346,10 +353,38 @@ class LocalStreamingDelegate {
             this.log.debug(`[${this.name}] Shared WS closed`);
             this.sharedWs = null;
         });
-        // Wait until go2rtc actually has a producer (camera is pushing RTMP)
-        // before handing off to FFmpeg. The fixed 2500ms delay was too short
-        // and caused FFmpeg to time out on an empty RTSP stream after ~28s.
-        await this._waitForGo2rtcStream(`nanit_${this.babyUid}`, 12000);
+        // Wait for the camera to actually open its RTMP connection to our server
+        // before registering with go2rtc. go2rtc tries to pull immediately on
+        // registration, so the RTMP stream must already be live or it will fail.
+        this.log.debug(`[${this.name}] Waiting for camera RTMP connection...`);
+        await this._waitForRtmpPublisher(streamKey, 12000);
+        this.log.info(`[${this.name}] Camera RTMP active — registering with go2rtc`);
+        // Register with go2rtc so it pulls and re-exposes as RTSP.
+        // go2rtc is lazy — it connects to RTMP only when an RTSP consumer arrives,
+        // so _waitForGo2rtcStream would always time out here. Confirmed camera is
+        // already pushing via _waitForRtmpPublisher, so go2rtc will serve immediately.
+        await this._registerGo2rtcStream(rtmpUrl);
+    }
+    async _waitForRtmpPublisher(streamKey, timeoutMs = 12000) {
+        const streamPath = `/live/${streamKey}`;
+        if (this._rtmpPublishing?.has(streamPath)) {
+            this.log.debug(`[${this.name}] RTMP publisher already active for ${streamPath}`);
+            return true;
+        }
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+                this.rtmpServer.removeListener('postPublish', handler);
+                reject(new Error(`Timed out waiting for camera RTMP push on ${streamPath}`));
+            }, timeoutMs);
+            const handler = (id, path) => {
+                if (path === streamPath) {
+                    clearTimeout(timer);
+                    this.rtmpServer.removeListener('postPublish', handler);
+                    resolve(true);
+                }
+            };
+            this.rtmpServer.on('postPublish', handler);
+        });
     }
     async _waitForGo2rtcStream(streamName, timeoutMs = 15000) {
         const start = Date.now();
@@ -460,7 +495,7 @@ class LocalStreamingDelegate {
                 this.log.info(`[${this.name}] SRTP target: ${target}:${videoPort} (audio: ${info.audioPort}), profile: ${x264Profile}/${x264Level}, ${video.width}x${video.height}@${video.fps}fps ${videoBitrate}kbps`);
                 const inputArgs = usingCloudFallback
                     ? ['-re', '-i', rtspUrl]
-                    : ['-rtsp_transport', 'tcp', '-stimeout', '10000000', '-i', rtspUrl];
+                    : ['-rtsp_transport', 'tcp', '-timeout', '10000000', '-i', rtspUrl];
                 const ffmpegArgs = [
                     ...inputArgs,
                     // Video stream
