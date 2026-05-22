@@ -17,6 +17,10 @@
     "go2rtc"
   ],
   "author": "GhostOnyx",
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/GhostOnyx"
+  },
   "license": "MIT",
   "homepage": "https://github.com/GhostOnyx/homebridge-nanit-pro#readme",
   "repository": {
