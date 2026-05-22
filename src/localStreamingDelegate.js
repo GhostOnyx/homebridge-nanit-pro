@@ -334,8 +334,14 @@ class LocalStreamingDelegate {
     }
     // Shared camera connection — one RTMP push via go2rtc relay, multiple RTSP readers
     async _ensureSharedStream() {
-        if (this.sharedWs && this.sharedWs.readyState === ws_1.default.OPEN) {
-            return; // already streaming
+        const streamPath = `/live/nanit_${this.babyUid}`;
+        if (this.sharedWs && this.sharedWs.readyState === ws_1.default.OPEN && this._rtmpPublishing?.has(streamPath)) {
+            return; // already streaming with active RTMP push
+        }
+        // Tear down any stale WS (open but RTMP is dead)
+        if (this.sharedWs) {
+            this.sharedWs.close();
+            this.sharedWs = null;
         }
         this.startRtmpServer();
         const ws = await this.connectToCamera();
@@ -357,7 +363,29 @@ class LocalStreamingDelegate {
         // before registering with go2rtc. go2rtc tries to pull immediately on
         // registration, so the RTMP stream must already be live or it will fail.
         this.log.debug(`[${this.name}] Waiting for camera RTMP connection...`);
-        await this._waitForRtmpPublisher(streamKey, 12000);
+        try {
+            await this._waitForRtmpPublisher(streamKey, 12000);
+        } catch (err) {
+            // Camera never pushed RTMP — send STOPPED to release its connection slot,
+            // otherwise the camera keeps the slot occupied and returns 403 on the next attempt.
+            this.log.warn(`[${this.name}] RTMP push timed out — releasing camera connection slot`);
+            if (this.sensorPollTimer) { clearInterval(this.sensorPollTimer); this.sensorPollTimer = null; }
+            const stopReq = nanit_proto_1.client.Request.create({
+                id: this.wsRequestId++,
+                type: nanit_proto_1.client.RequestType.PUT_STREAMING,
+                streaming: nanit_proto_1.client.Streaming.create({
+                    id: nanit_proto_1.client.StreamIdentifier.MOBILE,
+                    status: nanit_proto_1.client.Streaming.Status.STOPPED,
+                    rtmpUrl: '',
+                }),
+            });
+            const stopMsg = nanit_proto_1.client.Message.create({ type: nanit_proto_1.client.Message.Type.REQUEST, request: stopReq });
+            try { ws.send(nanit_proto_1.client.Message.encode(stopMsg).finish()); } catch (_) {}
+            ws.close();
+            this.sharedWs = null;
+            this.currentRtmpUrl = null;
+            throw err;
+        }
         this.log.info(`[${this.name}] Camera RTMP active — registering with go2rtc`);
         // Register with go2rtc so it pulls and re-exposes as RTSP.
         // go2rtc is lazy — it connects to RTMP only when an RTSP consumer arrives,

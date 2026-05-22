@@ -175,6 +175,10 @@ To use motion as a HomeKit automation trigger, set up a Home automation on the M
 
 ## Changelog
 
+### v1.1.13
+- Fixed 403 "connections above limit" error after a failed stream attempt: plugin now sends PUT_STREAMING STOPPED to release the camera's connection slot when the RTMP push times out, instead of leaving it occupied
+- Fixed stale WebSocket reuse: `_ensureSharedStream` now verifies an active RTMP publisher exists before treating a connection as live, preventing silent stream failures on retry
+
 ### v1.1.12
 - Added Verified by Homebridge badge to README
 - Added GitHub Sponsors funding link
