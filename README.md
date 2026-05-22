@@ -175,6 +175,10 @@ To use motion as a HomeKit automation trigger, set up a Home automation on the M
 
 ## Changelog
 
+### v1.1.12
+- Added Verified by Homebridge badge to README
+- Added GitHub Sponsors funding link
+
 ### v1.1.11
 - Fix: marked `homebridge` peer dependency as optional to prevent npm v7+ from auto-installing it alongside the plugin
 
