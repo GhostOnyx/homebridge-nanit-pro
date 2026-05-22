@@ -178,6 +178,8 @@ To use motion as a HomeKit automation trigger, set up a Home automation on the M
 ### v1.1.12
 - Added Verified by Homebridge badge to README
 - Added GitHub Sponsors funding link
+- Security: updated `protobufjs` to 7.6.0 (high-severity CVEs: code injection, DoS, prototype injection)
+- Security: updated `ws` to 8.20.1 (moderate: uninitialized memory disclosure)
 
 ### v1.1.11
 - Fix: marked `homebridge` peer dependency as optional to prevent npm v7+ from auto-installing it alongside the plugin
