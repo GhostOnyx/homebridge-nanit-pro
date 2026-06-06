@@ -65,6 +65,8 @@ class LocalStreamingDelegate {
     sensorPollTimer;
     currentRtmpUrl;
     sharedWs = null;
+    _sensorWs = null;
+    _sensorReconnectTimer = null;
     constructor(hap, log, name, localIp, getAccessToken, rtmpPort = 1935, cameraUid, babyUid, configuredLocalAddress, onSensorData, ffmpegPath = 'ffmpeg', go2rtcApiUrl = 'http://localhost:1984', onMotion = null, allowInsecureTls = false) {
         this.hap = hap;
         this.log = log;
@@ -116,6 +118,31 @@ class LocalStreamingDelegate {
     }
     stopRtmpServer() {
         this.log.debug(`[${this.name}] RTMP server kept alive for reuse`);
+    }
+    startSensorPolling() {
+        this._openSensorWs();
+    }
+    _openSensorWs() {
+        if (this._sensorReconnectTimer) { clearTimeout(this._sensorReconnectTimer); this._sensorReconnectTimer = null; }
+        if (this.sharedWs && this.sharedWs.readyState === ws_1.default.OPEN) return;
+        this.connectToCamera().then(ws => {
+            this._sensorWs = ws;
+            this.sendSensorDataRequest(ws);
+            if (this.sensorPollTimer) clearInterval(this.sensorPollTimer);
+            this.sensorPollTimer = setInterval(() => {
+                if (ws.readyState === ws_1.default.OPEN) this.sendSensorDataRequest(ws);
+            }, 60000);
+            ws.on('close', () => {
+                if (this._sensorWs === ws) this._sensorWs = null;
+                if (this.sensorPollTimer) { clearInterval(this.sensorPollTimer); this.sensorPollTimer = null; }
+                if (!this.sharedWs || this.sharedWs.readyState !== ws_1.default.OPEN) {
+                    this._sensorReconnectTimer = setTimeout(() => this._openSensorWs(), 30000);
+                }
+            });
+        }).catch(err => {
+            this.log.warn(`[${this.name}] Sensor WS connect failed: ${err.message} — retrying in 60s`);
+            this._sensorReconnectTimer = setTimeout(() => this._openSensorWs(), 60000);
+        });
     }
     async connectToCamera() {
         return new Promise((resolve, reject) => {
@@ -342,6 +369,9 @@ class LocalStreamingDelegate {
         if (this.sharedWs && this.sharedWs.readyState === ws_1.default.OPEN && this._rtmpPublishing?.has(streamPath)) {
             return; // already streaming with active RTMP push
         }
+        // Close sensor-only WS — the streaming WS will handle sensor polling
+        if (this._sensorReconnectTimer) { clearTimeout(this._sensorReconnectTimer); this._sensorReconnectTimer = null; }
+        if (this._sensorWs) { this._sensorWs.close(); this._sensorWs = null; }
         // Tear down any stale WS (open but RTMP is dead)
         if (this.sharedWs) {
             this.sharedWs.close();
@@ -362,6 +392,7 @@ class LocalStreamingDelegate {
         ws.on('close', () => {
             this.log.debug(`[${this.name}] Shared WS closed`);
             this.sharedWs = null;
+            if (this.sessions.size === 0) this._openSensorWs();
         });
         // Wait for the camera to actually open its RTMP connection to our server
         // before registering with go2rtc. go2rtc tries to pull immediately on
@@ -468,6 +499,7 @@ class LocalStreamingDelegate {
             this.sharedWs = null;
             this.currentRtmpUrl = null;
             this._unregisterGo2rtcStream();
+            this._openSensorWs();
         }
     }
     async handleStreamRequest(request, callback) {
@@ -629,6 +661,9 @@ class LocalStreamingDelegate {
             }
         }
         this.sessions.clear();
+        if (this._sensorReconnectTimer) { clearTimeout(this._sensorReconnectTimer); this._sensorReconnectTimer = null; }
+        if (this._sensorWs) { this._sensorWs.close(); this._sensorWs = null; }
+        if (this.sensorPollTimer) { clearInterval(this.sensorPollTimer); this.sensorPollTimer = null; }
         this.stopRtmpServer();
     }
 }
