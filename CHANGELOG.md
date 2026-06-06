@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.15] - 2026-06-06
+
+### Fixed
+- Temperature and humidity sensors now update immediately on plugin start without requiring a video stream — a dedicated sensor-only WebSocket is opened at startup and reconnects automatically if dropped; it hands off to the streaming WebSocket when a stream is active and reclaims it when the stream stops
+
+---
+
 ## [1.1.14] - 2026-06-06
 
 ### Fixed

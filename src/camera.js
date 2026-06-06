@@ -121,6 +121,9 @@ class NanitCamera {
             configurable: true,
         });
         this.accessory.configureController(this.cameraController);
+        if (this.streamingDelegate.startSensorPolling) {
+            this.streamingDelegate.startSensorPolling();
+        }
     }
     setupSensors() {
         this.currentTemperature = 0;
