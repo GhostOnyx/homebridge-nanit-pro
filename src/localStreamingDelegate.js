@@ -98,6 +98,10 @@ class LocalStreamingDelegate {
             },
         };
         this.rtmpServer = new node_media_server_1.default(config);
+        // NMS.on() delegates to an internal EventEmitter but doesn't expose removeListener.
+        // Patch it using the same nodeEvent so one-shot listeners can clean up.
+        const nmsCtx = require('node-media-server/src/node_core_ctx');
+        this.rtmpServer.removeListener = (event, listener) => nmsCtx.nodeEvent.removeListener(event, listener);
         this._rtmpPublishing = new Set();
         this.rtmpServer.on('postPublish', (id, streamPath) => {
             this._rtmpPublishing.add(streamPath);

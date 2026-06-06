@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.1.14] - 2026-06-06
+
+### Fixed
+- `TypeError: this.rtmpServer.removeListener is not a function` crash on RTMP push timeout — `NodeMediaServer` exposes `on()` but not `removeListener`; patched by wiring `removeListener` to the same internal `nodeEvent` EventEmitter that `on()` uses
+
+---
+
+## [1.1.13] - 2026-05-21
+
+### Fixed
+- On RTMP push timeout, plugin now sends `PUT_STREAMING STOPPED` before giving up, releasing the camera connection slot immediately and preventing 403 "connections above limit" errors on retry
+- `_ensureSharedStream` now verifies an active RTMP publisher is present before treating an existing WebSocket as live, preventing a stale connection from masking a dead stream
+
+---
+
 ## [1.1.11] - 2026-05-11
 
 ### Fixed
