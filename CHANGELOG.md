@@ -14,6 +14,17 @@
 
 ---
 
+## [1.1.12] - 2026-05-22
+
+### Security
+- Updated `protobufjs` to 7.6.0 and `ws` to 8.20.1
+
+### Changed
+- Added verified-by-homebridge badge to README
+- Added GitHub Sponsors funding link
+
+---
+
 ## [1.1.13] - 2026-05-21
 
 ### Fixed
