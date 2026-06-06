@@ -100,14 +100,16 @@ class LocalStreamingDelegate {
             },
         };
         this.rtmpServer = new node_media_server_1.default(config);
-        // NMS.on() delegates to an internal EventEmitter but doesn't expose removeListener.
-        // Patch it using the same nodeEvent so one-shot listeners can clean up.
-        const nmsCtx = require('node-media-server/src/node_core_ctx');
-        this.rtmpServer.removeListener = (event, listener) => nmsCtx.nodeEvent.removeListener(event, listener);
         this._rtmpPublishing = new Set();
+        this._rtmpPublishWaiters = new Map();
         this.rtmpServer.on('postPublish', (id, streamPath) => {
             this._rtmpPublishing.add(streamPath);
             this.log.debug(`[${this.name}] RTMP publisher connected: ${streamPath}`);
+            const waiters = this._rtmpPublishWaiters.get(streamPath);
+            if (waiters) {
+                this._rtmpPublishWaiters.delete(streamPath);
+                for (const resolve of waiters) resolve(true);
+            }
         });
         this.rtmpServer.on('donePublish', (id, streamPath) => {
             this._rtmpPublishing.delete(streamPath);
@@ -266,27 +268,38 @@ class LocalStreamingDelegate {
                 callback(error, buffer);
             }
         };
-        const cloudUrl = `rtmps://media-secured.nanit.com/nanit/${this.babyUid}.${this.getAccessToken()}`;
-        const tlsArgs = this.allowInsecureTls ? ['-tls_verify', '0'] : [];
-        const ffmpegArgs = [
-            ...tlsArgs,
-            '-timeout', '10000000',
-            '-i', cloudUrl,
-            '-frames:v', '1',
-            '-f', 'image2',
-            '-',
-        ];
-        this.log.debug(`[${this.name}] Snapshot URL: rtmps://media-secured.nanit.com/nanit/[baby_uid].[token_redacted]`);
+        const streamKey = `nanit_${this.babyUid}`;
+        const isLocalStreamActive = this.sharedWs && this.sharedWs.readyState === ws_1.default.OPEN
+            && this._rtmpPublishing?.has(`/live/${streamKey}`);
+        let ffmpegArgs;
+        if (isLocalStreamActive) {
+            const rtspUrl = `rtsp://localhost:8554/${streamKey}`;
+            this.log.debug(`[${this.name}] Snapshot from local RTSP: ${rtspUrl}`);
+            ffmpegArgs = ['-rtsp_transport', 'tcp', '-timeout', '10000000', '-i', rtspUrl, '-frames:v', '1', '-f', 'image2', '-'];
+        }
+        else {
+            const cloudUrl = `rtmps://media-secured.nanit.com/nanit/${this.babyUid}.${this.getAccessToken()}`;
+            const tlsArgs = this.allowInsecureTls ? ['-tls_verify', '0'] : [];
+            this.log.debug(`[${this.name}] Snapshot URL: rtmps://media-secured.nanit.com/nanit/[baby_uid].[token_redacted]`);
+            ffmpegArgs = [...tlsArgs, '-timeout', '10000000', '-i', cloudUrl, '-frames:v', '1', '-f', 'image2', '-'];
+        }
         const ffmpeg = (0, child_process_1.spawn)(this.ffmpegPath, ffmpegArgs, { env: process.env });
         let imageBuffer = Buffer.alloc(0);
+        const snapshotTimeout = setTimeout(() => {
+            this.log.warn(`[${this.name}] Snapshot timed out, killing ffmpeg`);
+            ffmpeg.kill('SIGTERM');
+            safeCallback(new Error('Snapshot timed out'));
+        }, 10000);
         ffmpeg.stdout.on('data', (data) => {
             imageBuffer = Buffer.concat([imageBuffer, data]);
         });
         ffmpeg.on('error', (error) => {
+            clearTimeout(snapshotTimeout);
             this.log.error(`[${this.name}] FFmpeg snapshot error:`, error.message);
             safeCallback(error);
         });
         ffmpeg.on('close', () => {
+            clearTimeout(snapshotTimeout);
             if (imageBuffer.length > 0) {
                 safeCallback(undefined, imageBuffer);
             }
@@ -435,18 +448,19 @@ class LocalStreamingDelegate {
             return true;
         }
         return new Promise((resolve, reject) => {
+            const waiters = this._rtmpPublishWaiters.get(streamPath) || [];
+            const onPublish = () => { clearTimeout(timer); resolve(true); };
+            waiters.push(onPublish);
+            this._rtmpPublishWaiters.set(streamPath, waiters);
             const timer = setTimeout(() => {
-                this.rtmpServer.removeListener('postPublish', handler);
+                const list = this._rtmpPublishWaiters.get(streamPath);
+                if (list) {
+                    const idx = list.indexOf(onPublish);
+                    if (idx !== -1) list.splice(idx, 1);
+                    if (list.length === 0) this._rtmpPublishWaiters.delete(streamPath);
+                }
                 reject(new Error(`Timed out waiting for camera RTMP push on ${streamPath}`));
             }, timeoutMs);
-            const handler = (id, path) => {
-                if (path === streamPath) {
-                    clearTimeout(timer);
-                    this.rtmpServer.removeListener('postPublish', handler);
-                    resolve(true);
-                }
-            };
-            this.rtmpServer.on('postPublish', handler);
         });
     }
     async _waitForGo2rtcStream(streamName, timeoutMs = 15000) {

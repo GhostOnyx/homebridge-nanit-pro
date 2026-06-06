@@ -175,6 +175,11 @@ To use motion as a HomeKit automation trigger, set up a Home automation on the M
 
 ## Changelog
 
+### v1.1.16
+- Replaced `removeListener` NMS patch with a waiter-map approach: resolve callbacks are keyed by stream path and fired directly from the `postPublish` handler — no listener removal needed, handles concurrent waiters correctly
+- Snapshots now pull from the local RTSP relay when a stream is active instead of cloud RTMPS — faster and avoids consuming an auth token
+- Snapshot ffmpeg process is killed after 10 seconds if it hangs on an unreachable stream
+
 ### v1.1.15
 - Fixed temperature and humidity sensors showing 0 when not streaming: plugin now opens a dedicated sensor-only WebSocket at startup and polls every 60 seconds regardless of whether a video stream is active; the connection hands off to the streaming WebSocket when a stream starts and reclaims it when the stream stops
 

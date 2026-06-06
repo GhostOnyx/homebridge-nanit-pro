@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.16] - 2026-06-06
+
+### Changed
+- Replaced `removeListener` NMS patch (v1.1.14) with a cleaner waiter-map approach: `_rtmpPublishWaiters` stores resolve callbacks keyed by stream path and the `postPublish` handler fires them directly — no listener removal needed, and concurrent waiters for the same path are handled correctly
+- Snapshots now pull from the local RTSP relay (`rtsp://localhost:8554/...`) when a local stream is already active, falling back to cloud RTMPS otherwise — faster and avoids consuming an auth token
+- Snapshot ffmpeg process is now killed after 10 seconds if it hangs on an unreachable stream
+
+---
+
 ## [1.1.15] - 2026-06-06
 
 ### Fixed
