@@ -175,6 +175,12 @@ To use motion as a HomeKit automation trigger, set up a Home automation on the M
 
 ## Changelog
 
+### v1.1.15
+- Fixed temperature and humidity sensors showing 0 when not streaming: plugin now opens a dedicated sensor-only WebSocket at startup and polls every 60 seconds regardless of whether a video stream is active; the connection hands off to the streaming WebSocket when a stream starts and reclaims it when the stream stops
+
+### v1.1.14
+- Fixed `TypeError: this.rtmpServer.removeListener is not a function` crash on RTMP push timeout — `NodeMediaServer` exposes `on()` but not `removeListener`; the missing method is now patched onto the instance at startup, wiring it to the same internal EventEmitter that `on()` uses
+
 ### v1.1.13
 - Fixed 403 "connections above limit" error after a failed stream attempt: plugin now sends PUT_STREAMING STOPPED to release the camera's connection slot when the RTMP push times out, instead of leaving it occupied
 - Fixed stale WebSocket reuse: `_ensureSharedStream` now verifies an active RTMP publisher exists before treating a connection as live, preventing silent stream failures on retry
