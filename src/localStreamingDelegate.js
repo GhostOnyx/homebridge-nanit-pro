@@ -281,7 +281,7 @@ class LocalStreamingDelegate {
             const cloudUrl = `rtmps://media-secured.nanit.com/nanit/${this.babyUid}.${this.getAccessToken()}`;
             const tlsArgs = this.allowInsecureTls ? ['-tls_verify', '0'] : [];
             this.log.debug(`[${this.name}] Snapshot URL: rtmps://media-secured.nanit.com/nanit/[baby_uid].[token_redacted]`);
-            ffmpegArgs = [...tlsArgs, '-timeout', '10000000', '-i', cloudUrl, '-frames:v', '1', '-f', 'image2', '-'];
+            ffmpegArgs = [...tlsArgs, '-rw_timeout', '10000000', '-i', cloudUrl, '-frames:v', '1', '-f', 'image2', '-'];
         }
         const ffmpeg = (0, child_process_1.spawn)(this.ffmpegPath, ffmpegArgs, { env: process.env });
         let imageBuffer = Buffer.alloc(0);
