@@ -1,9 +1,19 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.NanitCamera = void 0;
+const child_process_1 = require("child_process");
 const streamingDelegate_1 = require("./streamingDelegate");
 const localStreamingDelegate_1 = require("./localStreamingDelegate");
 const { NanitRecordingDelegate, RECORDING_OPTIONS } = require("./recordingDelegate");
+const aacEldSupport = new Map();
+function supportsAacEld(ffmpegPath) {
+    if (!aacEldSupport.has(ffmpegPath)) {
+        const result = (0, child_process_1.spawnSync)(ffmpegPath, ['-hide_banner', '-h', 'encoder=libfdk_aac'], { encoding: 'utf8' });
+        const output = `${result.stdout || ''}${result.stderr || ''}`;
+        aacEldSupport.set(ffmpegPath, output.includes('Encoder libfdk_aac'));
+    }
+    return aacEldSupport.get(ffmpegPath);
+}
 class NanitCamera {
     api;
     hap;
@@ -36,6 +46,7 @@ class NanitCamera {
     }
     setupCamera() {
         const streamMode = this.platform.config.streamMode || 'cloud';
+        let audioCodec = 'OPUS';
         const rtmpPort = this.platform.allocateRtmpPort();
         this.log.debug(`[${this.getName()}] Assigned RTMP port ${rtmpPort}`);
         const privateAddr = this.baby.camera?.private_address;
@@ -72,7 +83,13 @@ class NanitCamera {
             else {
                 this.log.info(`[${this.getName()}] Using cloud streaming mode`);
             }
-            this.streamingDelegate = new streamingDelegate_1.NanitStreamingDelegate(this.hap, this.log, this.getName(), () => this.getStreamUrl(), allowInsecureTls);
+            if (supportsAacEld(ffmpegPath)) {
+                audioCodec = 'AAC-eld';
+            }
+            else {
+                this.log.warn(`[${this.getName()}] FFmpeg does not support libfdk_aac; using Opus audio`);
+            }
+            this.streamingDelegate = new streamingDelegate_1.NanitStreamingDelegate(this.hap, this.log, this.getName(), () => this.getStreamUrl(), allowInsecureTls, ffmpegPath);
         }
         this.recordingDelegate = new NanitRecordingDelegate(this.log, () => this.currentRtmpUrl);
         const options = {
@@ -95,7 +112,7 @@ class NanitCamera {
                 audio: {
                     codecs: [
                         {
-                            type: "OPUS",
+                            type: audioCodec,
                             samplerate: 16,
                         },
                     ],

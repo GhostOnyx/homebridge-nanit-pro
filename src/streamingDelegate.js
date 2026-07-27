@@ -7,14 +7,16 @@ class NanitStreamingDelegate {
     log;
     name;
     getStreamUrl;
+    ffmpegPath;
     sessions = new Map();
     controller;
-    constructor(hap, log, name, getStreamUrl, allowInsecureTls = false) {
+    constructor(hap, log, name, getStreamUrl, allowInsecureTls = false, ffmpegPath = 'ffmpeg') {
         this.hap = hap;
         this.log = log;
         this.name = name;
         this.getStreamUrl = getStreamUrl;
         this.allowInsecureTls = allowInsecureTls;
+        this.ffmpegPath = ffmpegPath;
     }
     async handleSnapshotRequest(request, callback) {
         this.log.debug(`[${this.name}] Snapshot requested: ${request.width}x${request.height}`);
@@ -36,7 +38,7 @@ class NanitStreamingDelegate {
             '-',
         ];
         this.log.debug(`[${this.name}] Snapshot URL: rtmps://media-secured.nanit.com/nanit/[baby_uid].[token_redacted]`);
-        const ffmpeg = (0, child_process_1.spawn)('ffmpeg', ffmpegArgs, { env: process.env });
+        const ffmpeg = (0, child_process_1.spawn)(this.ffmpegPath, ffmpegArgs, { env: process.env });
         let imageBuffer = Buffer.alloc(0);
         const snapshotTimeout = setTimeout(() => {
             this.log.warn(`[${this.name}] Snapshot timed out, killing ffmpeg`);
@@ -119,6 +121,10 @@ class NanitStreamingDelegate {
             const audioPort = info.audioPort;
             const audioSrtpKey = info.audioSRTP.toString('base64');
             const audioSsrc = info.audioSSRC;
+            const audio = request.audio;
+            const audioCodecArgs = audio.codec === 'AAC-eld'
+                ? ['-acodec', 'libfdk_aac', '-profile:a', 'aac_eld', '-flags', '+global_header', '-frame_length', '480']
+                : ['-acodec', 'libopus', '-frame_duration', '20', '-application', 'voip'];
             const tlsArgs = this.allowInsecureTls ? ['-tls_verify', '0'] : [];
             const ffmpegArgs = [
                 '-re',
@@ -141,14 +147,12 @@ class NanitStreamingDelegate {
                 '-srtp_out_params', videoSrtpKey,
                 `srtp://${target}:${videoPort}?rtcpport=${videoPort}&pkt_size=1316`,
                 '-map', '0:a?',
-                '-acodec', 'libopus',
+                ...audioCodecArgs,
                 '-af', 'aresample=16000',
                 '-ar', '16000',
                 '-ac', '1',
-                '-b:a', '32k',
-                '-frame_duration', '20',
-                '-application', 'voip',
-                '-payload_type', '110',
+                '-b:a', `${audio.max_bit_rate || 24}k`,
+                '-payload_type', audio.pt.toString(),
                 '-ssrc', audioSsrc.toString(),
                 '-f', 'rtp',
                 '-srtp_out_suite', 'AES_CM_128_HMAC_SHA1_80',
@@ -156,7 +160,7 @@ class NanitStreamingDelegate {
                 `srtp://${target}:${audioPort}?rtcpport=${audioPort}&pkt_size=188`,
             ];
             this.log.debug(`[${this.name}] FFmpeg command starting (URL redacted for security)`);
-            const ffmpeg = (0, child_process_1.spawn)('ffmpeg', ffmpegArgs, { env: process.env });
+            const ffmpeg = (0, child_process_1.spawn)(this.ffmpegPath, ffmpegArgs, { env: process.env });
             session.process = ffmpeg;
             ffmpeg.stderr.on('data', (data) => {
                 const message = data.toString().trim();
