@@ -30,7 +30,7 @@ class NanitStreamingDelegate {
         const tlsArgs = this.allowInsecureTls ? ['-tls_verify', '0'] : [];
         const ffmpegArgs = [
             ...tlsArgs,
-            '-timeout', '10000000',
+            '-rw_timeout', '10000000',
             '-i', streamUrl,
             '-frames:v', '1',
             '-f', 'image2',
@@ -141,7 +141,7 @@ class NanitStreamingDelegate {
             const ffmpegArgs = [
                 '-re',
                 ...tlsArgs,
-                '-timeout', '10000000',
+                '-rw_timeout', '10000000',
                 '-i', streamUrl,
                 '-map', '0:v',
                 '-vcodec', 'libx264',
