@@ -8,14 +8,16 @@ class NanitStreamingDelegate {
     log;
     name;
     getStreamUrl;
+    ffmpegPath;
     sessions = new Map();
     controller;
-    constructor(hap, log, name, getStreamUrl, allowInsecureTls = false) {
+    constructor(hap, log, name, getStreamUrl, allowInsecureTls = false, ffmpegPath = 'ffmpeg') {
         this.hap = hap;
         this.log = log;
         this.name = name;
         this.getStreamUrl = getStreamUrl;
         this.allowInsecureTls = allowInsecureTls;
+        this.ffmpegPath = ffmpegPath;
     }
     async handleSnapshotRequest(request, callback) {
         this.log.debug(`[${this.name}] Snapshot requested: ${request.width}x${request.height}`);
@@ -37,7 +39,7 @@ class NanitStreamingDelegate {
             '-',
         ];
         this.log.debug(`[${this.name}] Snapshot URL: rtmps://media-secured.nanit.com/nanit/[baby_uid].[token_redacted]`);
-        const ffmpeg = (0, child_process_1.spawn)('ffmpeg', ffmpegArgs, { env: process.env });
+        const ffmpeg = (0, child_process_1.spawn)(this.ffmpegPath, ffmpegArgs, { env: process.env });
         let imageBuffer = Buffer.alloc(0);
         const snapshotTimeout = setTimeout(() => {
             this.log.warn(`[${this.name}] Snapshot timed out, killing ffmpeg`);
@@ -119,6 +121,10 @@ class NanitStreamingDelegate {
             const videoSsrc = info.videoSSRC;
             const audioPort = info.audioPort;
             const audioSsrc = info.audioSSRC;
+            const audio = request.audio;
+            const audioCodecArgs = audio.codec === 'AAC-eld'
+                ? ['-acodec', 'libfdk_aac', '-profile:a', 'aac_eld', '-flags', '+global_header', '-frame_length', '480']
+                : ['-acodec', 'libopus', '-frame_duration', '20', '-application', 'voip'];
             const tlsArgs = this.allowInsecureTls ? ['-tls_verify', '0'] : [];
             // HomeKit wants Opus RTP timestamps on the negotiated sample-rate clock, ffmpeg always
             // uses 48 kHz - so audio goes through a local relay that fixes the timestamp and does SRTP.
@@ -159,20 +165,18 @@ class NanitStreamingDelegate {
                 '-srtp_out_params', videoSrtpKey,
                 `srtp://${target}:${videoPort}?rtcpport=${videoPort}&pkt_size=1316`,
                 '-map', '0:a?',
-                '-acodec', 'libopus',
+                ...audioCodecArgs,
                 '-af', 'aresample=16000',
                 '-ar', '16000',
                 '-ac', '1',
-                '-b:a', '32k',
-                '-frame_duration', '20',
-                '-application', 'voip',
-                '-payload_type', '110',
+                '-b:a', `${audio.max_bit_rate || 24}k`,
+                '-payload_type', audio.pt.toString(),
                 '-ssrc', audioSsrc.toString(),
                 '-f', 'rtp',
                 `rtp://127.0.0.1:${session.opusRelay.port}?rtcpport=${session.opusRelay.port}&pkt_size=1316`,
             ];
             this.log.debug(`[${this.name}] FFmpeg command starting (URL redacted for security)`);
-            const ffmpeg = (0, child_process_1.spawn)('ffmpeg', ffmpegArgs, { env: process.env });
+            const ffmpeg = (0, child_process_1.spawn)(this.ffmpegPath, ffmpegArgs, { env: process.env });
             session.process = ffmpeg;
             ffmpeg.stderr.on('data', (data) => {
                 const message = data.toString().trim();
