@@ -614,15 +614,34 @@ class LocalStreamingDelegate {
                 this.log.info(`[${this.name}] SRTP target: ${target}:${videoPort} (audio: ${info.audioPort}), profile: ${x264Profile}/${x264Level}, ${video.width}x${video.height}@${video.fps}fps ${videoBitrate}kbps`);
                 // HomeKit wants Opus RTP timestamps on the negotiated sample-rate clock, ffmpeg always
                 // uses 48 kHz - so audio goes through a local relay that fixes the timestamp and does SRTP.
-                const audioClockKhz = request.audio?.sample_rate || 16;
-                session.opusRelay = await (0, opusRtpRelay_1.startOpusRelay)({
-                    target,
-                    port: info.audioPort,
-                    keySalt: info.audioSRTP,
-                    sampleRateKhz: audioClockKhz,
-                    onError: (err) => this.log.debug(`[${this.name}] Opus relay: ${err.message}`),
-                });
-                this.log.debug(`[${this.name}] Opus audio via timestamp relay (${audioClockKhz} kHz clock)`);
+                // Follow what HomeKit negotiated. A paired device keeps asking for the codec it cached
+                // (Opus or AAC-ELD) whatever we advertise now; sending the other one plays as silence.
+                const audio = request.audio || {};
+                const audioClockKhz = audio.sample_rate || 16;
+                const audioPacketTime = audio.packet_time || 20;
+                const audioPayloadType = audio.pt ?? 110;
+                const useAacEld = audio.codec === 'AAC-eld';
+                this.log.info(`[${this.name}] HomeKit audio: ${audio.codec || 'unknown'}, ${audioClockKhz} kHz, ${audioBitrate} kbps, ${audioPacketTime} ms, PT ${audioPayloadType}`);
+                let audioOutput;
+                if (useAacEld) {
+                    // AAC-ELD timestamps are already on the sample-rate clock: straight out as SRTP.
+                    audioOutput = ['-srtp_out_suite', 'AES_CM_128_HMAC_SHA1_80', '-srtp_out_params', info.audioSRTP.toString('base64'),
+                        `srtp://${target}:${info.audioPort}?rtcpport=${info.audioPort}&pkt_size=188`];
+                }
+                else {
+                    session.opusRelay = await (0, opusRtpRelay_1.startOpusRelay)({
+                        target,
+                        port: info.audioPort,
+                        keySalt: info.audioSRTP,
+                        sampleRateKhz: audioClockKhz,
+                        onError: (err) => this.log.debug(`[${this.name}] Opus relay: ${err.message}`),
+                    });
+                    this.log.debug(`[${this.name}] Opus audio via timestamp relay (${audioClockKhz} kHz clock)`);
+                    audioOutput = [`rtp://127.0.0.1:${session.opusRelay.port}?rtcpport=${session.opusRelay.port}&pkt_size=1316`];
+                }
+                const audioCodecArgs = useAacEld
+                    ? ['-acodec', 'libfdk_aac', '-profile:a', 'aac_eld', '-flags', '+global_header', '-frame_length', String(audioClockKhz * audioPacketTime)]
+                    : ['-acodec', 'libopus', '-frame_duration', String(audioPacketTime), '-application', 'voip'];
                 const inputArgs = usingCloudFallback
                     ? ['-re', '-i', rtspUrl]
                     : ['-rtsp_transport', 'tcp', '-timeout', '10000000', '-i', rtspUrl];
@@ -651,17 +670,15 @@ class LocalStreamingDelegate {
                     `srtp://${target}:${videoPort}?rtcpport=${videoPort}&pkt_size=1316`,
                     // Audio: reset timestamps to sequential (fixes AAC-HBR timing from RTMP→RTSP)
                     '-map', '0:a?',
-                    '-acodec', 'libopus',
-                    '-af', 'asetpts=N/SR/TB,aresample=16000',
-                    '-ar', '16000',
+                    ...audioCodecArgs,
+                    '-af', `asetpts=N/SR/TB,aresample=${audioClockKhz * 1000}`,
+                    '-ar', String(audioClockKhz * 1000),
                     '-ac', '1',
-                    '-b:a', '32k',
-                    '-frame_duration', '20',
-                    '-application', 'voip',
-                    '-payload_type', '110',
+                    '-b:a', `${audioBitrate}k`,
+                    '-payload_type', String(audioPayloadType),
                     '-ssrc', audioSsrc.toString(),
                     '-f', 'rtp',
-                    `rtp://127.0.0.1:${session.opusRelay.port}?rtcpport=${session.opusRelay.port}&pkt_size=1316`,
+                    ...audioOutput,
                 ];
                 this.log.info(`[${this.name}] Starting ffmpeg → ${rtspUrl}`);
                 const ffmpeg = (0, child_process_1.spawn)(this.ffmpegPath, ffmpegArgs, { env: process.env });
