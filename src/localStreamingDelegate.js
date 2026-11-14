@@ -256,7 +256,9 @@ class LocalStreamingDelegate {
     }
     // Tell the camera to stop pushing. Without this it keeps the stream slot and answers the next
     // start with 403 "Number of Mobile App connections above limit".
-    _sendStreamingStopped(ws) {
+    // The camera only accepts it with attempts > 0 (otherwise: 400 "Connection attempts must be greater
+    // than zero"), and it allows ONE mobile stream: a stream that was never stopped blocks every later start.
+    _sendStreamingStopped(ws, rtmpUrl = this.currentRtmpUrl || '') {
         if (!ws || ws.readyState !== ws_1.default.OPEN) return;
         const req = nanit_proto_1.client.Request.create({
             id: this.wsRequestId++,
@@ -264,7 +266,8 @@ class LocalStreamingDelegate {
             streaming: nanit_proto_1.client.Streaming.create({
                 id: nanit_proto_1.client.StreamIdentifier.MOBILE,
                 status: nanit_proto_1.client.Streaming.Status.STOPPED,
-                rtmpUrl: '',
+                rtmpUrl: rtmpUrl,
+                attempts: 1,
             }),
         });
         const msg = nanit_proto_1.client.Message.create({ type: nanit_proto_1.client.Message.Type.REQUEST, request: req });
@@ -437,17 +440,24 @@ class LocalStreamingDelegate {
         const streamKey = `nanit_${this.babyUid}`;
         const rtmpUrl = `rtmp://${hostIp}:${this.rtmpPort}/live/${streamKey}`;
         this.log.info(`[${this.name}] Requesting camera push → ${rtmpUrl}`);
-        const streamingRequestId = this.sendStreamingRequest(ws, rtmpUrl);
-        // If the camera refuses (e.g. 403 connection limit) it will never push: fail now, not after the timeout.
-        const declined = new Promise((_, reject) => {
-            ws._nanitResponseHandlers = ws._nanitResponseHandlers || new Map();
-            ws._nanitResponseHandlers.set(streamingRequestId, (response) => {
-                if (response.statusCode >= 400) {
-                    reject(new Error(`Camera declined the stream: ${response.statusCode} ${response.statusMessage || ''}`));
-                }
+        // Ask for the push. The returned promise rejects if the camera refuses, so we fail at once
+        // instead of waiting for a push that will never come.
+        const requestPush = () => {
+            const streamingRequestId = this.sendStreamingRequest(ws, rtmpUrl);
+            const declined = new Promise((_, reject) => {
+                ws._nanitResponseHandlers = ws._nanitResponseHandlers || new Map();
+                ws._nanitResponseHandlers.set(streamingRequestId, (response) => {
+                    if (response.statusCode >= 400) {
+                        const error = new Error(`Camera declined the stream: ${response.statusCode} ${response.statusMessage || ''}`);
+                        error.statusCode = response.statusCode;
+                        reject(error);
+                    }
+                });
             });
-        });
-        declined.catch(() => {});
+            declined.catch(() => {});
+            return declined;
+        };
+        const declined = requestPush();
         this.currentRtmpUrl = rtmpUrl;
         this.sendSensorDataRequest(ws);
         if (this.sensorPollTimer) clearInterval(this.sensorPollTimer);
@@ -464,13 +474,23 @@ class LocalStreamingDelegate {
         this.log.debug(`[${this.name}] Waiting for camera RTMP connection...`);
         try {
             // HomeKit gives up after ~9 s, so the wait must be shorter for the cloud fallback to be of any use.
-            await Promise.race([this._waitForRtmpPublisher(streamKey, 7000), declined]);
+            try {
+                await Promise.race([this._waitForRtmpPublisher(streamKey, 7000), declined]);
+            } catch (firstErr) {
+                if (firstErr.statusCode !== 403) throw firstErr;
+                // 403 "Number of Mobile App connections above limit" = the camera still has a stream
+                // registered (e.g. one that was never stopped before a restart). Stop it and ask again.
+                this.log.warn(`[${this.name}] Camera still has an old stream registered — stopping it and retrying`);
+                this._sendStreamingStopped(ws, rtmpUrl);
+                await new Promise((resolve) => setTimeout(resolve, 1500));
+                await Promise.race([this._waitForRtmpPublisher(streamKey, 5000), requestPush()]);
+            }
         } catch (err) {
             // Camera never pushed RTMP — send STOPPED to release its connection slot,
             // otherwise the camera keeps the slot occupied and returns 403 on the next attempt.
             this.log.warn(`[${this.name}] No camera RTMP push (${err.message}) — releasing camera connection slot`);
             if (this.sensorPollTimer) { clearInterval(this.sensorPollTimer); this.sensorPollTimer = null; }
-            this._sendStreamingStopped(ws);
+            this._sendStreamingStopped(ws, rtmpUrl);
             ws.close();
             if (this.sharedWs === ws) this.sharedWs = null;
             this.currentRtmpUrl = null;
