@@ -35,6 +35,7 @@ jobs:
           node --check src/camera.js
           node --check src/localStreamingDelegate.js
           node --check src/streamingDelegate.js
+          node --check src/opusRtpRelay.js
           node --check src/authServer.js
           node --check src/recordingDelegate.js
           node --check src/cli.js
