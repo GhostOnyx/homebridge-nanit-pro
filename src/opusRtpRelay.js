@@ -38,7 +38,13 @@ class SrtpEncryptor {
     protect(rtp) {
         let headerLength = 12 + 4 * (rtp[0] & 0x0f);
         if (rtp[0] & 0x10) {
+            if (headerLength + 4 > rtp.length) {
+                throw new Error('truncated RTP header extension');
+            }
             headerLength += 4 + 4 * rtp.readUInt16BE(headerLength + 2);
+        }
+        if (headerLength > rtp.length) {
+            throw new Error('RTP header longer than packet');
         }
         const seq = rtp.readUInt16BE(2);
         if (this.lastSeq >= 0 && seq < this.lastSeq && this.lastSeq - seq > 0x8000) {
@@ -77,15 +83,24 @@ function startOpusRelay({ target, port, keySalt, sampleRateKhz, onError }) {
         let elapsed48k = 0; // 48 kHz ticks since the first packet (not wrapped)
         let baseTs = 0;
         let closed = false;
+        let senderPort = null; // ffmpeg's RTP source port, locked on the first RTP packet
         const fail = (err) => { if (onError) onError(err); };
         outSock.on('error', fail);
         inSock.on('error', (err) => { fail(err); reject(err); });
-        inSock.on('message', (msg) => {
-            if (closed || msg.length < 12 || (msg[0] >> 6) !== 2) {
+        inSock.on('message', (msg, rinfo) => {
+            if (closed) {
                 return;
             }
-            if (msg[1] >= 200 && msg[1] <= 204) {
-                stats.dropped++; // RTCP from ffmpeg
+            if (msg.length < 12 || (msg[0] >> 6) !== 2 || (msg[1] >= 200 && msg[1] <= 204)) {
+                stats.dropped++; // malformed, or RTCP from ffmpeg
+                return;
+            }
+            // Only one sender per session: anything else on loopback is not our ffmpeg.
+            if (senderPort === null) {
+                senderPort = rinfo.port;
+            }
+            else if (rinfo.port !== senderPort) {
+                stats.dropped++;
                 return;
             }
             const ts = msg.readUInt32BE(4);
@@ -98,8 +113,16 @@ function startOpusRelay({ target, port, keySalt, sampleRateKhz, onError }) {
             lastTs = ts;
             const rtp = Buffer.from(msg);
             rtp.writeUInt32BE((baseTs + Math.round(elapsed48k * sampleRateKhz / 48)) % 0x100000000, 4);
+            let srtp;
+            try {
+                srtp = encryptor.protect(rtp);
+            }
+            catch (err) {
+                stats.dropped++;
+                return;
+            }
             stats.packets++;
-            outSock.send(encryptor.protect(rtp), port, target, (err) => { if (err) fail(err); });
+            outSock.send(srtp, port, target, (err) => { if (err) fail(err); });
         });
         inSock.bind(0, '127.0.0.1', () => {
             resolve({
