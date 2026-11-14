@@ -128,9 +128,11 @@ class NanitStreamingDelegate {
             const tlsArgs = this.allowInsecureTls ? ['-tls_verify', '0'] : [];
             // HomeKit wants Opus RTP timestamps on the negotiated sample-rate clock, ffmpeg always
             // uses 48 kHz - so audio goes through a local relay that fixes the timestamp and does SRTP.
+            // AAC-ELD timestamps are already on the sample-rate clock, so it goes straight out as SRTP.
             const audioClockKhz = request.audio?.sample_rate || 16;
+            const useOpusRelay = audio.codec !== 'AAC-eld';
             try {
-                session.opusRelay = await (0, opusRtpRelay_1.startOpusRelay)({
+                if (useOpusRelay) session.opusRelay = await (0, opusRtpRelay_1.startOpusRelay)({
                     target,
                     port: audioPort,
                     keySalt: info.audioSRTP,
@@ -143,7 +145,11 @@ class NanitStreamingDelegate {
                 callback(error);
                 return;
             }
-            this.log.debug(`[${this.name}] Opus audio via timestamp relay (${audioClockKhz} kHz clock)`);
+            if (useOpusRelay) this.log.debug(`[${this.name}] Opus audio via timestamp relay (${audioClockKhz} kHz clock)`);
+            const audioOutput = useOpusRelay
+                ? [`rtp://127.0.0.1:${session.opusRelay.port}?rtcpport=${session.opusRelay.port}&pkt_size=1316`]
+                : ['-srtp_out_suite', 'AES_CM_128_HMAC_SHA1_80', '-srtp_out_params', info.audioSRTP.toString('base64'),
+                    `srtp://${target}:${audioPort}?rtcpport=${audioPort}&pkt_size=188`];
             const ffmpegArgs = [
                 '-re',
                 ...tlsArgs,
@@ -173,7 +179,7 @@ class NanitStreamingDelegate {
                 '-payload_type', audio.pt.toString(),
                 '-ssrc', audioSsrc.toString(),
                 '-f', 'rtp',
-                `rtp://127.0.0.1:${session.opusRelay.port}?rtcpport=${session.opusRelay.port}&pkt_size=1316`,
+                ...audioOutput,
             ];
             this.log.debug(`[${this.name}] FFmpeg command starting (URL redacted for security)`);
             const ffmpeg = (0, child_process_1.spawn)(this.ffmpegPath, ffmpegArgs, { env: process.env });

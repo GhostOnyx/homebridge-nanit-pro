@@ -128,7 +128,12 @@ class LocalStreamingDelegate {
     _openSensorWs() {
         if (this._sensorReconnectTimer) { clearTimeout(this._sensorReconnectTimer); this._sensorReconnectTimer = null; }
         if (this.sharedWs && this.sharedWs.readyState === ws_1.default.OPEN) return;
+        if (this._sharedSetup || this._sensorConnecting || this._sensorWs) return;
+        this._sensorConnecting = true;
         this.connectToCamera().then(ws => {
+            this._sensorConnecting = false;
+            // A stream started while we were connecting: it carries the sensor polling itself.
+            if (this.sharedWs || this._sharedSetup || this._destroyed) { ws.close(); return; }
             this._sensorWs = ws;
             this.sendSensorDataRequest(ws);
             if (this.sensorPollTimer) clearInterval(this.sensorPollTimer);
@@ -143,6 +148,8 @@ class LocalStreamingDelegate {
                 }
             });
         }).catch(err => {
+            this._sensorConnecting = false;
+            if (this._destroyed) return;
             this.log.warn(`[${this.name}] Sensor WS connect failed: ${err.message} — retrying in 60s`);
             this._sensorReconnectTimer = setTimeout(() => this._openSensorWs(), 60000);
         });
@@ -178,6 +185,11 @@ class LocalStreamingDelegate {
                             statusCode: response.statusCode,
                             statusMessage: response.statusMessage,
                         });
+                        const onResponse = ws._nanitResponseHandlers?.get(response.requestId);
+                        if (onResponse) {
+                            ws._nanitResponseHandlers.delete(response.requestId);
+                            onResponse(response);
+                        }
                         if (response.sensorData && response.sensorData.length > 0) {
                             if (this.onSensorData) {
                                 let temperature;
@@ -240,6 +252,23 @@ class LocalStreamingDelegate {
         const buffer = nanit_proto_1.client.Message.encode(message).finish();
         this.log.debug(`[${this.name}] Sending PUT_STREAMING request to ${rtmpUrl}`);
         ws.send(buffer);
+        return requestId;
+    }
+    // Tell the camera to stop pushing. Without this it keeps the stream slot and answers the next
+    // start with 403 "Number of Mobile App connections above limit".
+    _sendStreamingStopped(ws) {
+        if (!ws || ws.readyState !== ws_1.default.OPEN) return;
+        const req = nanit_proto_1.client.Request.create({
+            id: this.wsRequestId++,
+            type: nanit_proto_1.client.RequestType.PUT_STREAMING,
+            streaming: nanit_proto_1.client.Streaming.create({
+                id: nanit_proto_1.client.StreamIdentifier.MOBILE,
+                status: nanit_proto_1.client.Streaming.Status.STOPPED,
+                rtmpUrl: '',
+            }),
+        });
+        const msg = nanit_proto_1.client.Message.create({ type: nanit_proto_1.client.Message.Type.REQUEST, request: req });
+        try { ws.send(nanit_proto_1.client.Message.encode(msg).finish()); } catch (_) {}
     }
     sendSensorDataRequest(ws) {
         if (!this.onSensorData) return;
@@ -379,6 +408,15 @@ class LocalStreamingDelegate {
     }
     // Shared camera connection — one RTMP push via go2rtc relay, multiple RTSP readers
     async _ensureSharedStream() {
+        if (this._idleStopTimer) { clearTimeout(this._idleStopTimer); this._idleStopTimer = null; }
+        // The Home app retries every few seconds; a retry joins the setup already in flight instead of
+        // opening another camera connection.
+        if (!this._sharedSetup) {
+            this._sharedSetup = this._setupSharedStream().finally(() => { this._sharedSetup = null; });
+        }
+        return this._sharedSetup;
+    }
+    async _setupSharedStream() {
         const streamPath = `/live/nanit_${this.babyUid}`;
         if (this.sharedWs && this.sharedWs.readyState === ws_1.default.OPEN && this._rtmpPublishing?.has(streamPath)) {
             return; // already streaming with active RTMP push
@@ -388,6 +426,7 @@ class LocalStreamingDelegate {
         if (this._sensorWs) { this._sensorWs.close(); this._sensorWs = null; }
         // Tear down any stale WS (open but RTMP is dead)
         if (this.sharedWs) {
+            this._sendStreamingStopped(this.sharedWs);
             this.sharedWs.close();
             this.sharedWs = null;
         }
@@ -398,40 +437,42 @@ class LocalStreamingDelegate {
         const streamKey = `nanit_${this.babyUid}`;
         const rtmpUrl = `rtmp://${hostIp}:${this.rtmpPort}/live/${streamKey}`;
         this.log.info(`[${this.name}] Requesting camera push → ${rtmpUrl}`);
-        this.sendStreamingRequest(ws, rtmpUrl);
+        const streamingRequestId = this.sendStreamingRequest(ws, rtmpUrl);
+        // If the camera refuses (e.g. 403 connection limit) it will never push: fail now, not after the timeout.
+        const declined = new Promise((_, reject) => {
+            ws._nanitResponseHandlers = ws._nanitResponseHandlers || new Map();
+            ws._nanitResponseHandlers.set(streamingRequestId, (response) => {
+                if (response.statusCode >= 400) {
+                    reject(new Error(`Camera declined the stream: ${response.statusCode} ${response.statusMessage || ''}`));
+                }
+            });
+        });
+        declined.catch(() => {});
         this.currentRtmpUrl = rtmpUrl;
         this.sendSensorDataRequest(ws);
         if (this.sensorPollTimer) clearInterval(this.sensorPollTimer);
         this.sensorPollTimer = setInterval(() => this.sendSensorDataRequest(ws), 60000);
         ws.on('close', () => {
             this.log.debug(`[${this.name}] Shared WS closed`);
-            this.sharedWs = null;
-            if (this.sessions.size === 0) this._openSensorWs();
+            // Only if this is still the current one - a newer connection must not be orphaned.
+            if (this.sharedWs === ws) this.sharedWs = null;
+            if (!this.sharedWs && !this._destroyed && this.sessions.size === 0) this._openSensorWs();
         });
         // Wait for the camera to actually open its RTMP connection to our server
         // before registering with go2rtc. go2rtc tries to pull immediately on
         // registration, so the RTMP stream must already be live or it will fail.
         this.log.debug(`[${this.name}] Waiting for camera RTMP connection...`);
         try {
-            await this._waitForRtmpPublisher(streamKey, 12000);
+            // HomeKit gives up after ~9 s, so the wait must be shorter for the cloud fallback to be of any use.
+            await Promise.race([this._waitForRtmpPublisher(streamKey, 7000), declined]);
         } catch (err) {
             // Camera never pushed RTMP — send STOPPED to release its connection slot,
             // otherwise the camera keeps the slot occupied and returns 403 on the next attempt.
-            this.log.warn(`[${this.name}] RTMP push timed out — releasing camera connection slot`);
+            this.log.warn(`[${this.name}] No camera RTMP push (${err.message}) — releasing camera connection slot`);
             if (this.sensorPollTimer) { clearInterval(this.sensorPollTimer); this.sensorPollTimer = null; }
-            const stopReq = nanit_proto_1.client.Request.create({
-                id: this.wsRequestId++,
-                type: nanit_proto_1.client.RequestType.PUT_STREAMING,
-                streaming: nanit_proto_1.client.Streaming.create({
-                    id: nanit_proto_1.client.StreamIdentifier.MOBILE,
-                    status: nanit_proto_1.client.Streaming.Status.STOPPED,
-                    rtmpUrl: '',
-                }),
-            });
-            const stopMsg = nanit_proto_1.client.Message.create({ type: nanit_proto_1.client.Message.Type.REQUEST, request: stopReq });
-            try { ws.send(nanit_proto_1.client.Message.encode(stopMsg).finish()); } catch (_) {}
+            this._sendStreamingStopped(ws);
             ws.close();
-            this.sharedWs = null;
+            if (this.sharedWs === ws) this.sharedWs = null;
             this.currentRtmpUrl = null;
             throw err;
         }
@@ -496,26 +537,26 @@ class LocalStreamingDelegate {
     }
     _stopSharedStreamIfIdle() {
         if (this.sessions.size > 0) return;
-        if (this.sharedWs && this.sharedWs.readyState === ws_1.default.OPEN) {
+        if (this._idleStopTimer) clearTimeout(this._idleStopTimer);
+        // The Home app often stops and restarts within a second; wait a moment before tearing down.
+        this._idleStopTimer = setTimeout(() => {
+            this._idleStopTimer = null;
+            if (this.sessions.size > 0 || this.startingSessions.size > 0 || this._sharedSetup) return;
+            this._stopSharedStreamNow();
+        }, 3000);
+    }
+    _stopSharedStreamNow() {
+        const ws = this.sharedWs;
+        if (ws && ws.readyState === ws_1.default.OPEN) {
             this.log.info(`[${this.name}] No active sessions — stopping camera push`);
-            const requestId = this.wsRequestId++;
-            const req = nanit_proto_1.client.Request.create({
-                id: requestId,
-                type: nanit_proto_1.client.RequestType.PUT_STREAMING,
-                streaming: nanit_proto_1.client.Streaming.create({
-                    id: nanit_proto_1.client.StreamIdentifier.MOBILE,
-                    status: nanit_proto_1.client.Streaming.Status.STOPPED,
-                    rtmpUrl: '',
-                }),
-            });
-            const msg = nanit_proto_1.client.Message.create({ type: nanit_proto_1.client.Message.Type.REQUEST, request: req });
-            this.sharedWs.send(nanit_proto_1.client.Message.encode(msg).finish());
-            this.sharedWs.close();
+            this._sendStreamingStopped(ws);
+            ws.close();
             this.sharedWs = null;
             this.currentRtmpUrl = null;
             this._unregisterGo2rtcStream();
-            this._openSensorWs();
         }
+        // Also after a cloud-fallback session, where there is no camera connection left to close.
+        if (!this._destroyed) this._openSensorWs();
     }
     async handleStreamRequest(request, callback) {
         const sessionId = request.sessionID;
@@ -672,6 +713,9 @@ class LocalStreamingDelegate {
     }
     destroy() {
         this.log.debug(`[${this.name}] Cleaning up local streaming delegate`);
+        this._destroyed = true;
+        if (this._idleStopTimer) { clearTimeout(this._idleStopTimer); this._idleStopTimer = null; }
+        if (this.sharedWs) { this._sendStreamingStopped(this.sharedWs); this.sharedWs.close(); this.sharedWs = null; }
         for (const [sessionId, session] of this.sessions) {
             if (session.ws && session.ws.readyState === ws_1.default.OPEN) {
                 session.ws.close();
