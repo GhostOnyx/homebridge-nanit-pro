@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.17] - 2026-11-14
+
+### Fixed
+- Choppy audio in the Home app (sound breaking up several times a second): HomeKit expects Opus RTP timestamps on the negotiated sample-rate clock (+320 per 20 ms packet at 16 kHz), but ffmpeg's RTP muxer always stamps Opus on a 48 kHz clock (+960). Audio now goes from ffmpeg as plain RTP to a small built-in relay (`src/opusRtpRelay.js`) that rewrites the timestamp onto the negotiated clock, applies SRTP (AES_CM_128_HMAC_SHA1_80) and sends it to the HomeKit client. Applies to both local and cloud streaming; video is unchanged
+
+---
+
 ## [1.1.16] - 2026-06-06
 
 ### Changed

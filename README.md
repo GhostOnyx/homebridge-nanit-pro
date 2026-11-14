@@ -175,6 +175,9 @@ To use motion as a HomeKit automation trigger, set up a Home automation on the M
 
 ## Changelog
 
+### v1.1.17
+- Fixed choppy audio in the Home app: Opus RTP timestamps are now sent on the sample-rate clock HomeKit negotiated (ffmpeg always uses 48 kHz), via a small built-in relay that also handles SRTP for the audio stream — local and cloud streaming
+
 ### v1.1.16
 - Replaced `removeListener` NMS patch with a waiter-map approach: resolve callbacks are keyed by stream path and fired directly from the `postPublish` handler — no listener removal needed, handles concurrent waiters correctly
 - Snapshots now pull from the local RTSP relay when a stream is active instead of cloud RTMPS — faster and avoids consuming an auth token

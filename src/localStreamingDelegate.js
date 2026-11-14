@@ -42,6 +42,7 @@ const ws_1 = __importDefault(require("ws"));
 const os = __importStar(require("os"));
 const nanit_proto_1 = require("./nanit.proto");
 const node_media_server_1 = __importDefault(require("node-media-server"));
+const opusRtpRelay_1 = require("./opusRtpRelay");
 class LocalStreamingDelegate {
     hap;
     log;
@@ -560,7 +561,6 @@ class LocalStreamingDelegate {
                 const videoPort = info.videoPort;
                 const videoSrtpKey = info.videoSRTP.toString('base64');
                 const videoSsrc = info.videoSSRC;
-                const audioSrtpKey = info.audioSRTP.toString('base64');
                 const audioSsrc = info.audioSSRC;
                 const audioBitrate = request.audio ? request.audio.max_bit_rate || 24 : 24;
                 // Force minimum 2000kbps for decent quality regardless of HomeKit's request
@@ -571,6 +571,17 @@ class LocalStreamingDelegate {
                 const x264Profile = profileMap[video.profile] || 'main';
                 const x264Level = levelMap[video.level] || '3.1';
                 this.log.info(`[${this.name}] SRTP target: ${target}:${videoPort} (audio: ${info.audioPort}), profile: ${x264Profile}/${x264Level}, ${video.width}x${video.height}@${video.fps}fps ${videoBitrate}kbps`);
+                // HomeKit wants Opus RTP timestamps on the negotiated sample-rate clock, ffmpeg always
+                // uses 48 kHz - so audio goes through a local relay that fixes the timestamp and does SRTP.
+                const audioClockKhz = request.audio?.sample_rate || 16;
+                session.opusRelay = await (0, opusRtpRelay_1.startOpusRelay)({
+                    target,
+                    port: info.audioPort,
+                    keySalt: info.audioSRTP,
+                    sampleRateKhz: audioClockKhz,
+                    onError: (err) => this.log.debug(`[${this.name}] Opus relay: ${err.message}`),
+                });
+                this.log.debug(`[${this.name}] Opus audio via timestamp relay (${audioClockKhz} kHz clock)`);
                 const inputArgs = usingCloudFallback
                     ? ['-re', '-i', rtspUrl]
                     : ['-rtsp_transport', 'tcp', '-timeout', '10000000', '-i', rtspUrl];
@@ -609,9 +620,7 @@ class LocalStreamingDelegate {
                     '-payload_type', '110',
                     '-ssrc', audioSsrc.toString(),
                     '-f', 'rtp',
-                    '-srtp_out_suite', 'AES_CM_128_HMAC_SHA1_80',
-                    '-srtp_out_params', audioSrtpKey,
-                    `srtp://${target}:${info.audioPort}?rtcpport=${info.audioPort}&pkt_size=188`,
+                    `rtp://127.0.0.1:${session.opusRelay.port}?rtcpport=${session.opusRelay.port}&pkt_size=1316`,
                 ];
                 this.log.info(`[${this.name}] Starting ffmpeg → ${rtspUrl}`);
                 const ffmpeg = (0, child_process_1.spawn)(this.ffmpegPath, ffmpegArgs, { env: process.env });
@@ -624,6 +633,7 @@ class LocalStreamingDelegate {
                     this.log.error(`[${this.name}] FFmpeg failed to start: ${error.message} (is ffmpeg installed and in PATH?)`);
                 });
                 ffmpeg.on('close', (code) => {
+                    if (session.opusRelay) { session.opusRelay.close(); session.opusRelay = null; }
                     this.log.info(`[${this.name}] Video stream stopped (exit code ${code})`);
                 });
                 callback();
@@ -638,6 +648,7 @@ class LocalStreamingDelegate {
             this.startingSessions.delete(sessionId);
             const session = this.sessions.get(sessionId);
             if (session) {
+                if (session.opusRelay) { session.opusRelay.close(); session.opusRelay = null; }
                 if (session.process) {
                     session.process.kill('SIGTERM');
                     setTimeout(() => {
@@ -665,6 +676,7 @@ class LocalStreamingDelegate {
             if (session.ws && session.ws.readyState === ws_1.default.OPEN) {
                 session.ws.close();
             }
+            if (session.opusRelay) { session.opusRelay.close(); session.opusRelay = null; }
             if (session.process) {
                 session.process.kill('SIGTERM');
                 setTimeout(() => {

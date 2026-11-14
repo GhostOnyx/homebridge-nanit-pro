@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.NanitStreamingDelegate = void 0;
 const child_process_1 = require("child_process");
+const opusRtpRelay_1 = require("./opusRtpRelay");
 class NanitStreamingDelegate {
     hap;
     log;
@@ -117,9 +118,26 @@ class NanitStreamingDelegate {
             const videoSrtpKey = info.videoSRTP.toString('base64');
             const videoSsrc = info.videoSSRC;
             const audioPort = info.audioPort;
-            const audioSrtpKey = info.audioSRTP.toString('base64');
             const audioSsrc = info.audioSSRC;
             const tlsArgs = this.allowInsecureTls ? ['-tls_verify', '0'] : [];
+            // HomeKit wants Opus RTP timestamps on the negotiated sample-rate clock, ffmpeg always
+            // uses 48 kHz - so audio goes through a local relay that fixes the timestamp and does SRTP.
+            const audioClockKhz = request.audio?.sample_rate || 16;
+            try {
+                session.opusRelay = await (0, opusRtpRelay_1.startOpusRelay)({
+                    target,
+                    port: audioPort,
+                    keySalt: info.audioSRTP,
+                    sampleRateKhz: audioClockKhz,
+                    onError: (err) => this.log.debug(`[${this.name}] Opus relay: ${err.message}`),
+                });
+            }
+            catch (error) {
+                this.log.error(`[${this.name}] Failed to start audio relay:`, error.message);
+                callback(error);
+                return;
+            }
+            this.log.debug(`[${this.name}] Opus audio via timestamp relay (${audioClockKhz} kHz clock)`);
             const ffmpegArgs = [
                 '-re',
                 ...tlsArgs,
@@ -151,9 +169,7 @@ class NanitStreamingDelegate {
                 '-payload_type', '110',
                 '-ssrc', audioSsrc.toString(),
                 '-f', 'rtp',
-                '-srtp_out_suite', 'AES_CM_128_HMAC_SHA1_80',
-                '-srtp_out_params', audioSrtpKey,
-                `srtp://${target}:${audioPort}?rtcpport=${audioPort}&pkt_size=188`,
+                `rtp://127.0.0.1:${session.opusRelay.port}?rtcpport=${session.opusRelay.port}&pkt_size=1316`,
             ];
             this.log.debug(`[${this.name}] FFmpeg command starting (URL redacted for security)`);
             const ffmpeg = (0, child_process_1.spawn)('ffmpeg', ffmpegArgs, { env: process.env });
@@ -166,6 +182,7 @@ class NanitStreamingDelegate {
                 this.log.error(`[${this.name}] FFmpeg process error:`, error.message);
             });
             ffmpeg.on('close', () => {
+                if (session.opusRelay) { session.opusRelay.close(); session.opusRelay = null; }
                 this.log.info(`[${this.name}] Video stream stopped`);
             });
             callback();
@@ -173,6 +190,7 @@ class NanitStreamingDelegate {
         else if (request.type === "stop") {
             this.log.info(`[${this.name}] Stopping video stream`);
             const session = this.sessions.get(sessionId);
+            if (session?.opusRelay) { session.opusRelay.close(); session.opusRelay = null; }
             if (session?.process) {
                 session.process.kill('SIGTERM');
                 setTimeout(() => {
@@ -193,6 +211,7 @@ class NanitStreamingDelegate {
     destroy() {
         this.log.debug(`[${this.name}] Cleaning up streaming delegate`);
         for (const [sessionId, session] of this.sessions.entries()) {
+            if (session.opusRelay) { session.opusRelay.close(); session.opusRelay = null; }
             if (session.process) {
                 session.process.kill('SIGTERM');
                 setTimeout(() => {
