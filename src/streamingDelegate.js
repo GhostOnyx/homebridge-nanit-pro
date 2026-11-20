@@ -28,9 +28,14 @@ class NanitStreamingDelegate {
         };
         const streamUrl = this.getStreamUrl();
         const tlsArgs = this.allowInsecureTls ? ['-tls_verify', '0'] : [];
+        // A snapshot needs one frame, so cap FFmpeg's stream analysis at 1s. The
+        // default (5s) makes every cloud snapshot take 5s or more, which leaves
+        // little headroom before the 10s kill timer below.
         const ffmpegArgs = [
             ...tlsArgs,
-            '-timeout', '10000000',
+            '-rw_timeout', '10000000',
+            '-analyzeduration', '1000000',
+            '-probesize', '1000000',
             '-i', streamUrl,
             '-frames:v', '1',
             '-f', 'image2',
@@ -141,7 +146,7 @@ class NanitStreamingDelegate {
             const ffmpegArgs = [
                 '-re',
                 ...tlsArgs,
-                '-timeout', '10000000',
+                '-rw_timeout', '10000000',
                 '-i', streamUrl,
                 '-map', '0:v',
                 '-vcodec', 'libx264',

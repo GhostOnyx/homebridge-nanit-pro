@@ -282,7 +282,10 @@ class LocalStreamingDelegate {
             const cloudUrl = `rtmps://media-secured.nanit.com/nanit/${this.babyUid}.${this.getAccessToken()}`;
             const tlsArgs = this.allowInsecureTls ? ['-tls_verify', '0'] : [];
             this.log.debug(`[${this.name}] Snapshot URL: rtmps://media-secured.nanit.com/nanit/[baby_uid].[token_redacted]`);
-            ffmpegArgs = [...tlsArgs, '-timeout', '10000000', '-i', cloudUrl, '-frames:v', '1', '-f', 'image2', '-'];
+            // A snapshot needs one frame, so cap FFmpeg's stream analysis at 1s. The
+            // default (5s) makes every cloud snapshot take 5s or more, which leaves
+            // little headroom before the 10s kill timer below.
+            ffmpegArgs = [...tlsArgs, '-rw_timeout', '10000000', '-analyzeduration', '1000000', '-probesize', '1000000', '-i', cloudUrl, '-frames:v', '1', '-f', 'image2', '-'];
         }
         const ffmpeg = (0, child_process_1.spawn)(this.ffmpegPath, ffmpegArgs, { env: process.env });
         let imageBuffer = Buffer.alloc(0);
